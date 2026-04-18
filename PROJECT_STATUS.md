@@ -123,6 +123,7 @@ _Nothing currently in progress_
 
 ### Known Issues
 - `app.json` has two invalid schema fields flagged by `expo-doctor`: `newArchEnabled` (top-level) and `android.edgeToEdgeEnabled` — safe to remove on next cleanup pass
+- ~~Legacy `App.js`/`index.js` shadowed Expo Router~~ — fixed: deleted both files, `package.json` `main` now points to `expo-router/entry`
 
 ### User Preferences
 - Family organization app focus
