@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "s=$(git status --porcelain 2>/dev/null); if [ -n \"$s\" ] && ! echo \"$s\" | grep -q 'PROJECT_STATUS\\.md'; then printf '{\"decision\":\"block\",\"reason\":\"Other files have uncommitted changes but PROJECT_STATUS.md has not been updated. Update PROJECT_STATUS.md to reflect the work before finishing.\"}\\n'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
