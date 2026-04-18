@@ -23,7 +23,17 @@
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "static",
+      "name": "Les Joyeux Live",
+      "shortName": "JoyeuxLive",
+      "description": "Family organization app — calendar, tasks, shopping lists, and more.",
+      "lang": "en",
+      "themeColor": "#4A90D9",
+      "backgroundColor": "#ffffff",
+      "display": "standalone",
+      "orientation": "portrait"
     },
     "plugins": [
       "expo-router"

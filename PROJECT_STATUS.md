@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-18
+**Last Updated**: 2026-04-19 (PWA config implemented)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -37,6 +37,13 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 - [x] Added architecture diagrams
 - [x] Documented deployment process
 
+### Source Control & Tooling
+- [x] Renamed default branch from `master` to `main` (local + global git default)
+- [x] Pushed to GitHub: https://github.com/MarkHanlon/LesJoyeuxLive
+- [x] Installed Vercel CLI globally (`vercel --version` → 51.7.0)
+- [x] Signed in to Vercel CLI (`vercel login`)
+- [x] Added project-scoped Claude Code Stop hook (`.claude/settings.json`) that blocks stop and injects a reminder whenever the working tree has uncommitted changes but PROJECT_STATUS.md has not been touched
+
 ---
 
 ## 🔄 In Progress
@@ -66,12 +73,24 @@ _Nothing currently in progress_
 - [ ] Add authorization/permissions per family member
 - [ ] Secure API routes with auth middleware
 
-### UI/UX Development
+### PWA Installation (iPhone + Android, share via link / QR code)
+**Goal**: Family members scan a QR code → open the Vercel URL in their phone browser → *Add to Home Screen* (iOS Safari) or accept the install prompt (Android Chrome) → app launches standalone with its own icon, no browser chrome.
+
+- [x] Extend `app.json` `expo.web` block: `display: "standalone"`, `themeColor`, `backgroundColor`, `shortName`, `description`, `lang`, `orientation`, `bundler: "metro"`, `output: "static"`
+- [x] Generate proper PWA icon set from `assets/icon.png` — `public/icon-192.png`, `public/icon-512.png`, `public/icon-512-maskable.png` (80% canvas with white safe-zone padding); used `sharp` npm package (added as devDependency)
+- [x] Add `apple-touch-icon.png` at 180×180 → `public/apple-touch-icon.png`
+- [x] Add web-only HTML head tags — created `app/+html.tsx`: `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`, `viewport` with `viewport-fit=cover`, `<link rel="apple-touch-icon">`
+- [ ] Run a Lighthouse PWA audit against `npm run web` locally and fix any warnings before deploying
+- [ ] Deploy the Expo web build to Vercel (via `vercel link` + GitHub auto-deploy) and confirm HTTPS serves the manifest correctly
+- [ ] Generate a QR code pointing at the production URL (or a custom subdomain) for easy family sharing
+- [ ] Manually test the *Add to Home Screen* flow end-to-end on at least one iPhone (Safari) and one Android (Chrome) device
+- [ ] **Follow-up (optional, not required for v1)**: add a service worker for offline support — Expo does not ship one by default; Workbox/Serwist plugin, or a custom `public/sw.js`
+
+### Other UI/UX Development
 - [ ] Design and implement main navigation
 - [ ] Create reusable component library
 - [ ] Implement theme/styling system
 - [ ] Add loading states and error handling
-- [ ] PWA optimization (icons, manifest, service worker)
 
 ### Testing & Deployment
 - [ ] Set up testing framework (Jest, React Native Testing Library)
@@ -83,10 +102,13 @@ _Nothing currently in progress_
 ---
 
 ## 🎯 Current Priority
-**Next Step**: User needs to:
-1. Provision Neon Postgres via Vercel Marketplace (`vercel integration add neon`)
-2. Pull credentials locally (`vercel env pull .env.local`) — this sets `DATABASE_URL`
-3. Define requirements for first feature to implement
+**Next Step** (in this order):
+1. **PWA configuration** — work through the "PWA Installation" task list above so the web build is installable on iOS and Android home screens
+2. **Link this folder to a Vercel project** (`vercel link`) — or import the GitHub repo via the Vercel dashboard for automatic preview/production deploys
+3. **First deploy** — push and verify the production URL serves the PWA over HTTPS
+4. **Generate and share QR code** — for family onboarding
+5. Provision Neon Postgres via Vercel Marketplace (`vercel integration add neon`) and `vercel env pull .env.local`
+6. Define requirements for first feature to implement
 
 ---
 
@@ -99,13 +121,16 @@ _Nothing currently in progress_
 - See `SECURITY.md` for detailed patterns
 
 ### Known Issues
-- Vercel CLI not installed globally — install with `npm i -g vercel` to use Marketplace provisioning and `vercel env pull`
 - `app.json` has two invalid schema fields flagged by `expo-doctor`: `newArchEnabled` (top-level) and `android.edgeToEdgeEnabled` — safe to remove on next cleanup pass
 
 ### User Preferences
 - Family organization app focus
-- PWA deployment to Vercel
+- PWA deployment to Vercel, installable on iPhones and Androids via shared link / QR code (one-tap *Add to Home Screen* flow)
 - Security-first approach with API Routes pattern
+
+### Known PWA Tradeoff (iOS vs Android)
+- Android Chrome shows a native install prompt and supports full service-worker features including push notifications
+- iOS Safari does **not** show an install prompt — users must manually tap *Share → Add to Home Screen*. Push notifications require iOS 16.4+. Background sync is limited. For a family-organization use-case this is acceptable, but worth calling out in any onboarding instructions / QR-code landing copy
 
 ---
 
