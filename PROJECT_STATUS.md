@@ -84,6 +84,7 @@ _Nothing currently in progress_
 - [ ] Deploy the Expo web build to Vercel (via `vercel link` + GitHub auto-deploy) and confirm HTTPS serves the manifest correctly
 - [ ] Generate a QR code pointing at the production URL (or a custom subdomain) for easy family sharing
 - [ ] Manually test the *Add to Home Screen* flow end-to-end on at least one iPhone (Safari) and one Android (Chrome) device
+- [x] **Install prompt UX**: created `components/InstallPrompt.web.tsx` — detects browser vs. standalone mode; Android shows native install sheet via `beforeinstallprompt`; iOS shows step-by-step Share → Add to Home Screen instructions; dismissal persisted to localStorage; slides in with spring animation; wired into root layout via `app/_layout.tsx`
 - [ ] **Follow-up (optional, not required for v1)**: add a service worker for offline support — Expo does not ship one by default; Workbox/Serwist plugin, or a custom `public/sw.js`
 
 ### Other UI/UX Development
