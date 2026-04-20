@@ -34,6 +34,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="visit"
+        options={{
+          title: 'My Visit',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 16, color }}>🗓️</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="admin"
         options={{
           title: 'Family',

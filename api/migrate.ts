@@ -30,6 +30,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`TRUNCATE users`;
     }
 
+    await db`
+      CREATE TABLE IF NOT EXISTS visits (
+        id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        arrive_date DATE        NOT NULL,
+        arrive_slot TEXT        NOT NULL,
+        save_lunch  BOOLEAN     NOT NULL DEFAULT false,
+        save_dinner BOOLEAN     NOT NULL DEFAULT false,
+        depart_date DATE        NOT NULL,
+        depart_slot TEXT        NOT NULL,
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(user_id)
+      )
+    `;
+
     res.status(200).json({ ok: true, message: 'Database ready' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
