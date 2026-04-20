@@ -11,7 +11,7 @@ export type User = {
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  register: (name: string) => Promise<void>;
+  register: (name: string, pin: string) => Promise<void>;
   refreshStatus: () => Promise<void>;
 };
 
@@ -45,11 +45,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function register(name: string) {
+  async function register(name: string, pin: string) {
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, pin }),
     });
     if (!res.ok) {
       const err = await res.json();

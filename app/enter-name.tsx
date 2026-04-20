@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,19 +13,25 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function EnterName() {
   const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const { register } = useAuth();
+  const pinRef = useRef<TextInput>(null);
 
   async function handleJoin() {
     if (!name.trim()) {
       setError('Please enter your name');
       return;
     }
+    if (!/^\d{4}$/.test(pin)) {
+      setError('PIN must be exactly 4 digits');
+      return;
+    }
     setIsSubmitting(true);
     setError('');
     try {
-      await register(name.trim());
+      await register(name.trim(), pin);
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong. Try again.');
       setIsSubmitting(false);
@@ -60,13 +66,35 @@ export default function EnterName() {
               setName(text);
               setError('');
             }}
-            onSubmitEditing={handleJoin}
+            onSubmitEditing={() => pinRef.current?.focus()}
             autoFocus
             autoComplete="given-name"
             textContentType="givenName"
-            returnKeyType="done"
+            returnKeyType="next"
           />
           <View style={styles.inputBar} />
+        </View>
+
+        <View style={[styles.inputBlock, { marginTop: 24 }]}>
+          <Text style={styles.pinLabel}>Your PIN</Text>
+          <TextInput
+            ref={pinRef}
+            style={styles.input}
+            placeholder="4-digit PIN"
+            placeholderTextColor="#B8956A"
+            value={pin}
+            onChangeText={text => {
+              setPin(text.replace(/\D/g, '').slice(0, 4));
+              setError('');
+            }}
+            keyboardType="numeric"
+            maxLength={4}
+            secureTextEntry
+            returnKeyType="go"
+            onSubmitEditing={handleJoin}
+          />
+          <View style={styles.inputBar} />
+          <Text style={styles.pinHint}>Use the same PIN on all your devices</Text>
         </View>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -193,5 +221,20 @@ const styles = StyleSheet.create({
     color: '#C8973D',
     opacity: 0.55,
     letterSpacing: 6,
+  },
+  pinLabel: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#5C3D2E',
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  pinHint: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#5C3D2E',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    marginTop: 8,
   },
 });
