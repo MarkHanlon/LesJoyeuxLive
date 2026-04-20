@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+
+// On web (PWA) use localStorage directly — AsyncStorage v3 web layer is unreliable across app launches
+const storage = Platform.OS === 'web'
+  ? {
+      getItem: (k: string) => Promise.resolve(typeof window !== 'undefined' ? window.localStorage.getItem(k) : null),
+      setItem: (k: string, v: string) => { if (typeof window !== 'undefined') window.localStorage.setItem(k, v); return Promise.resolve(); },
+      removeItem: (k: string) => { if (typeof window !== 'undefined') window.localStorage.removeItem(k); return Promise.resolve(); },
+    }
+  : AsyncStorage;
 
 export type User = {
   id: string;
@@ -29,13 +39,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function loadUser() {
     try {
-      const userId = await AsyncStorage.getItem(STORAGE_KEY);
+      const userId = await storage.getItem(STORAGE_KEY);
       if (userId) {
         const res = await fetch(`/api/status/${userId}`);
         if (res.ok) {
           setUser(await res.json());
         } else {
-          await AsyncStorage.removeItem(STORAGE_KEY);
+          await storage.removeItem(STORAGE_KEY);
         }
       }
     } catch {
@@ -56,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(err.error ?? 'Registration failed');
     }
     const data: User & { createdAt: string } = await res.json();
-    await AsyncStorage.setItem(STORAGE_KEY, data.id);
+    await storage.setItem(STORAGE_KEY, data.id);
     setUser(data);
   }
 
