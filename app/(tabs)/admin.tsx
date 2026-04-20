@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,93 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+
+
+function NotificationBanner({ userId }: { userId: string }) {
+  const [permission, setPermission] = useState<NotificationPermission | null>(null);
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    if (typeof Notification === 'undefined') return;
+    setPermission(Notification.permission);
+    if (Notification.permission === 'granted') {
+      navigator.serviceWorker?.ready.then((reg) =>
+        reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub))
+      );
+    }
+  }, []);
+
+  if (Platform.OS !== 'web' || permission === null) return null;
+  if (subscribed) return null;
+
+  async function enable() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+      if (result !== 'granted') return;
+
+      const res = await fetch('/api/push/vapid-key');
+      if (!res.ok) throw new Error('Push not configured on server');
+      const { publicKey } = await res.json();
+
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey,
+      });
+
+      const saveRes = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, subscription: sub.toJSON() }),
+      });
+      if (!saveRes.ok) throw new Error('Failed to save subscription');
+      setSubscribed(true);
+    } catch (e: any) {
+      setError(e.message ?? 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (permission === 'denied') {
+    return (
+      <View style={bannerStyles.banner}>
+        <Text style={bannerStyles.icon}>🔕</Text>
+        <Text style={bannerStyles.text}>
+          Notifications blocked — enable them in browser settings to get alerts.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={bannerStyles.banner}>
+      <Text style={bannerStyles.icon}>🔔</Text>
+      <View style={bannerStyles.body}>
+        <Text style={bannerStyles.text}>Get notified when someone joins</Text>
+        {error && <Text style={bannerStyles.errorText}>{error}</Text>}
+      </View>
+      <TouchableOpacity
+        style={[bannerStyles.btn, busy && bannerStyles.btnBusy]}
+        onPress={enable}
+        disabled={busy}
+        activeOpacity={0.8}
+      >
+        {busy ? (
+          <ActivityIndicator color="#F5EDD6" size="small" />
+        ) : (
+          <Text style={bannerStyles.btnText}>Enable</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 type PendingUser = {
   id: string;
@@ -96,6 +184,8 @@ export default function AdminScreen() {
         <Text style={styles.headline}>Who's knocking? 🚪</Text>
         <Text style={styles.subline}>Family members waiting for access</Text>
       </View>
+
+      {user && <NotificationBanner userId={user.id} />}
 
       {isLoading ? (
         <View style={styles.centred}>
@@ -284,5 +374,53 @@ const styles = StyleSheet.create({
     color: '#8B6245',
     textAlign: 'center',
     lineHeight: 23,
+  },
+});
+
+const bannerStyles = StyleSheet.create({
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8ED',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDD9A3',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  icon: {
+    fontSize: 20,
+  },
+  body: {
+    flex: 1,
+  },
+  text: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#5C3D1E',
+    lineHeight: 18,
+  },
+  errorText: {
+    fontSize: 11,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#C85A2E',
+    marginTop: 2,
+  },
+  btn: {
+    backgroundColor: '#C85A2E',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 50,
+    minWidth: 72,
+    alignItems: 'center',
+  },
+  btnBusy: {
+    opacity: 0.7,
+  },
+  btnText: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#F5EDD6',
   },
 });

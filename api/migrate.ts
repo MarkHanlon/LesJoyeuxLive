@@ -45,6 +45,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
     `;
 
+    await db`
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint   TEXT        NOT NULL UNIQUE,
+        p256dh     TEXT        NOT NULL,
+        auth       TEXT        NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
     res.status(200).json({ ok: true, message: 'Database ready' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

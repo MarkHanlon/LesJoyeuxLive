@@ -1,6 +1,6 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import InstallPrompt from '../components/InstallPrompt';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
@@ -8,6 +8,12 @@ function RootLayoutContent() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;

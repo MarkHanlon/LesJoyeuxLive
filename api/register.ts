@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { scrypt, randomBytes, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
 import { getDb } from './db';
+import { sendPushToAdmins } from './push/_send';
 
 const scryptAsync = promisify(scrypt);
 
@@ -63,6 +64,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
       RETURNING id, name, status, is_admin AS "isAdmin", created_at AS "createdAt"
     `;
+
+    if (user.status === 'pending') {
+      sendPushToAdmins(db, {
+        title: 'Someone is knocking 🚪',
+        body: `${trimmedName} is waiting for your approval.`,
+        url: '/(tabs)/admin',
+      }).catch(() => {});
+    }
 
     res.status(201).json(user);
   } catch (err: any) {
