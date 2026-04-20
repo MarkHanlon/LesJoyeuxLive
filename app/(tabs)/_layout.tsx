@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Platform, Text } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function TabLayout() {
@@ -17,7 +17,7 @@ export default function TabLayout() {
           borderTopWidth: 1.5,
         },
         tabBarLabelStyle: {
-          fontFamily: 'Raleway, system-ui, sans-serif',
+          fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
           fontSize: 11,
           fontWeight: '600',
         },

@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -19,6 +20,7 @@ export default function EnterName() {
   const [error, setError] = useState('');
   const { register } = useAuth();
   const pinRef = useRef<TextInput>(null);
+  const { width, height } = useWindowDimensions();
 
   async function handleJoin() {
     if (!name.trim()) {
@@ -43,7 +45,7 @@ export default function EnterName() {
     <View style={styles.root}>
       <Image
         source={require('../assets/les_joyeux.jpg')}
-        style={styles.bgImage}
+        style={[styles.bgImage, { width, height }]}
         resizeMode="cover"
       />
       <View style={styles.overlay} />
