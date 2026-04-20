@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  ImageBackground,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -39,99 +40,105 @@ export default function EnterName() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <ImageBackground
+      source={require('../assets/les_joyeux.jpg')}
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      resizeMode="cover"
     >
-      {/* Decorative leaf — bottom-right corner */}
-      <Text style={styles.bgLeaf}>🍃</Text>
+      {/* Warm parchment veil — softens the photo while keeping it visible */}
+      <View style={styles.overlay} />
 
-      <View style={styles.inner}>
-        <Text style={styles.fleur}>⚜</Text>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.inner}>
+          <Text style={styles.fleur}>⚜</Text>
 
-        <View style={styles.headingBlock}>
-          <Text style={styles.headline}>Bienvenue !</Text>
-          <Text style={styles.subline}>
-            Tell us your name{'\n'}to join the family.
-          </Text>
+          <View style={styles.headingBlock}>
+            <Text style={styles.headline}>Bienvenue !</Text>
+            <Text style={styles.subline}>
+              Tell us your name{'\n'}to join the family.
+            </Text>
+          </View>
+
+          {/* Frosted card holds the form inputs */}
+          <View style={styles.card}>
+            <View style={styles.inputBlock}>
+              <TextInput
+                style={styles.input}
+                placeholder="Your first name"
+                placeholderTextColor="#B8956A"
+                value={name}
+                onChangeText={text => {
+                  setName(text);
+                  setError('');
+                }}
+                onSubmitEditing={() => pinRef.current?.focus()}
+                autoFocus
+                autoComplete="given-name"
+                textContentType="givenName"
+                returnKeyType="next"
+              />
+              <View style={styles.inputBar} />
+            </View>
+
+            <View style={[styles.inputBlock, { marginTop: 28 }]}>
+              <Text style={styles.pinLabel}>Your PIN</Text>
+              <TextInput
+                ref={pinRef}
+                style={styles.input}
+                placeholder="4-digit PIN"
+                placeholderTextColor="#B8956A"
+                value={pin}
+                onChangeText={text => {
+                  setPin(text.replace(/\D/g, '').slice(0, 4));
+                  setError('');
+                }}
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry
+                returnKeyType="go"
+                onSubmitEditing={handleJoin}
+              />
+              <View style={styles.inputBar} />
+              <Text style={styles.pinHint}>Use the same PIN on all your devices</Text>
+            </View>
+          </View>
+
+          {!!error && <Text style={styles.error}>{error}</Text>}
+
+          <TouchableOpacity
+            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+            onPress={handleJoin}
+            disabled={isSubmitting}
+            activeOpacity={0.82}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#F5EDD6" />
+            ) : (
+              <Text style={styles.buttonText}>Join the Family →</Text>
+            )}
+          </TouchableOpacity>
+
+          <Text style={styles.vines}>🌿 &nbsp;&nbsp; ⚜ &nbsp;&nbsp; 🌿</Text>
         </View>
-
-        <View style={styles.inputBlock}>
-          <TextInput
-            style={styles.input}
-            placeholder="Your first name"
-            placeholderTextColor="#B8956A"
-            value={name}
-            onChangeText={text => {
-              setName(text);
-              setError('');
-            }}
-            onSubmitEditing={() => pinRef.current?.focus()}
-            autoFocus
-            autoComplete="given-name"
-            textContentType="givenName"
-            returnKeyType="next"
-          />
-          <View style={styles.inputBar} />
-        </View>
-
-        <View style={[styles.inputBlock, { marginTop: 24 }]}>
-          <Text style={styles.pinLabel}>Your PIN</Text>
-          <TextInput
-            ref={pinRef}
-            style={styles.input}
-            placeholder="4-digit PIN"
-            placeholderTextColor="#B8956A"
-            value={pin}
-            onChangeText={text => {
-              setPin(text.replace(/\D/g, '').slice(0, 4));
-              setError('');
-            }}
-            keyboardType="numeric"
-            maxLength={4}
-            secureTextEntry
-            returnKeyType="go"
-            onSubmitEditing={handleJoin}
-          />
-          <View style={styles.inputBar} />
-          <Text style={styles.pinHint}>Use the same PIN on all your devices</Text>
-        </View>
-
-        {!!error && <Text style={styles.error}>{error}</Text>}
-
-        <TouchableOpacity
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleJoin}
-          disabled={isSubmitting}
-          activeOpacity={0.82}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#F5EDD6" />
-          ) : (
-            <Text style={styles.buttonText}>Join the Family →</Text>
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.vines}>🌿 &nbsp;&nbsp; ⚜ &nbsp;&nbsp; 🌿</Text>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F5EDD6',
   },
-  bgLeaf: {
-    position: 'absolute',
-    fontSize: 220,
-    bottom: -30,
-    right: -40,
-    opacity: 0.06,
-    transform: [{ rotate: '-20deg' }],
-    pointerEvents: 'none',
-  } as any,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(245, 237, 214, 0.74)',
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
   inner: {
     flex: 1,
     alignItems: 'center',
@@ -142,20 +149,20 @@ const styles = StyleSheet.create({
   fleur: {
     fontSize: 34,
     color: '#C8973D',
-    marginBottom: 28,
+    marginBottom: 24,
     letterSpacing: 4,
   },
   headingBlock: {
     alignItems: 'center',
-    marginBottom: 44,
+    marginBottom: 40,
   },
   headline: {
-    fontSize: 46,
+    fontSize: 52,
     fontFamily: 'Playfair Display, Georgia, serif',
     fontStyle: 'italic',
     color: '#1A1209',
     textAlign: 'center',
-    lineHeight: 54,
+    lineHeight: 60,
     marginBottom: 14,
   },
   subline: {
@@ -166,29 +173,60 @@ const styles = StyleSheet.create({
     lineHeight: 27,
     letterSpacing: 0.3,
   },
-  inputBlock: {
+  card: {
     width: '100%',
     maxWidth: 340,
+    backgroundColor: 'rgba(255, 252, 244, 0.82)',
+    borderRadius: 18,
+    paddingVertical: 28,
+    paddingHorizontal: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(200, 151, 61, 0.25)',
+    shadowColor: '#6B4A1A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 6,
     marginBottom: 8,
   },
+  inputBlock: {
+    width: '100%',
+  },
   input: {
-    fontSize: 24,
+    fontSize: 22,
     fontFamily: 'Raleway, system-ui, sans-serif',
     color: '#1A1209',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
     letterSpacing: 0.5,
   },
   inputBar: {
-    height: 2,
+    height: 1.5,
     backgroundColor: '#C8973D',
     borderRadius: 1,
+    opacity: 0.6,
+  },
+  pinLabel: {
+    fontSize: 12,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  pinHint: {
+    fontSize: 12,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    marginTop: 10,
   },
   error: {
     fontSize: 14,
     fontFamily: 'Raleway, system-ui, sans-serif',
     color: '#C85A2E',
-    marginTop: 10,
+    marginTop: 12,
     textAlign: 'center',
   },
   button: {
@@ -196,7 +234,7 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     paddingHorizontal: 44,
     borderRadius: 50,
-    marginTop: 40,
+    marginTop: 36,
     shadowColor: '#6B2E15',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
@@ -216,25 +254,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   vines: {
-    marginTop: 52,
+    marginTop: 44,
     fontSize: 20,
     color: '#C8973D',
-    opacity: 0.55,
+    opacity: 0.6,
     letterSpacing: 6,
-  },
-  pinLabel: {
-    fontSize: 13,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#5C3D2E',
-    letterSpacing: 0.3,
-    marginBottom: 4,
-  },
-  pinHint: {
-    fontSize: 13,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#5C3D2E',
-    textAlign: 'center',
-    letterSpacing: 0.3,
-    marginTop: 8,
   },
 });
