@@ -23,6 +23,7 @@ type AuthContextType = {
   isLoading: boolean;
   register: (name: string, pin: string) => Promise<void>;
   refreshStatus: () => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -70,6 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(data);
   }
 
+  async function logout() {
+    await storage.removeItem(STORAGE_KEY);
+    setUser(null);
+  }
+
   async function refreshStatus() {
     if (!user) return;
     try {
@@ -81,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, register, refreshStatus }}>
+    <AuthContext.Provider value={{ user, isLoading, register, refreshStatus, logout }}>
       {children}
     </AuthContext.Provider>
   );
