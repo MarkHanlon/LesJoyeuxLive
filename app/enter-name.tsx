@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  useWindowDimensions,
+  Dimensions,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -20,7 +20,7 @@ export default function EnterName() {
   const [error, setError] = useState('');
   const { register } = useAuth();
   const pinRef = useRef<TextInput>(null);
-  const { width, height } = useWindowDimensions();
+  const [{ width, height }] = useState(() => Dimensions.get('window'));
 
   async function handleJoin() {
     if (!name.trim()) {
