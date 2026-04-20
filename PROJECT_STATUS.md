@@ -47,7 +47,28 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 ---
 
 ## 🔄 In Progress
-_Nothing currently in progress_
+
+### Family Access / Onboarding Flow (2026-04-20)
+Name-based, password-free family access control. First user auto-approved as admin.
+
+**Steps:**
+- [ ] **1. Neon Postgres** — provision via Vercel Marketplace, pull DATABASE_URL locally
+- [x] **2. Database schema** — `users` table (UUID id, name, status, is_admin, created_at); `/api/migrate` endpoint
+- [x] **3. Install AsyncStorage** — `@react-native-async-storage/async-storage` ^3.0.2 installed
+- [x] **4. API routes** (project-root `/api/` directory):
+  - `POST /api/register` — create user; first-ever user auto-approved as admin
+  - `GET /api/status/[id]` — poll current user's status
+  - `GET /api/admin/users` — list pending users (admin UUID in x-admin-id header)
+  - `POST /api/admin/approve/[id]` — approve a pending user
+- [x] **5. Auth context** — `contexts/AuthContext.tsx` done
+- [x] **6. Screens** — all three screens built with French-provincial design:
+  - `app/enter-name.tsx` — Bienvenue! name entry screen
+  - `app/pending.tsx` — "Hang tight!" chateau background + floating castle animation
+  - `app/(tabs)/admin.tsx` — pending users list with approve buttons (admin tab only)
+- [x] **7. Auth-aware root layout** — `app/_layout.tsx` + `app/(tabs)/_layout.tsx` updated
+- [ ] **8. Deploy** — `vercel deploy --prod`, hit `POST /api/migrate` once, register as Mark → auto-admin
+
+**Remaining:** Provision Neon (step 1) then deploy (step 8)
 
 ---
 
@@ -69,7 +90,7 @@ _Nothing currently in progress_
 - [ ] Notifications/reminders
 
 ### Authentication & Security
-- [ ] Implement authentication system (e.g., Clerk, Auth0, or custom)
+- [x] Implement authentication system — name-based, password-free family access (see In Progress above)
 - [ ] Add authorization/permissions per family member
 - [ ] Secure API routes with auth middleware
 
