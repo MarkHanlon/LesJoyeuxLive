@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   View,
+  Image,
   Text,
   TextInput,
   TouchableOpacity,
@@ -8,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  ImageBackground,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -40,12 +40,12 @@ export default function EnterName() {
   }
 
   return (
-    <ImageBackground
-      source={require('../assets/les_joyeux.jpg')}
-      style={styles.root}
-      resizeMode="cover"
-    >
-      {/* Warm parchment veil — softens the photo while keeping it visible */}
+    <View style={styles.root}>
+      <Image
+        source={require('../assets/les_joyeux.jpg')}
+        style={styles.bgImage}
+        resizeMode="cover"
+      />
       <View style={styles.overlay} />
 
       <KeyboardAvoidingView
@@ -124,13 +124,16 @@ export default function EnterName() {
           <Text style={styles.vines}>🌿 &nbsp;&nbsp; ⚜ &nbsp;&nbsp; 🌿</Text>
         </View>
       </KeyboardAvoidingView>
-    </ImageBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  bgImage: {
+    ...StyleSheet.absoluteFillObject,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

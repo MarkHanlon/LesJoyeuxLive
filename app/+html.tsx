@@ -11,7 +11,7 @@ export default function Root({ children }: PropsWithChildren) {
         {/* Responsive layout + safe-area for notched iPhones */}
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, shrink-to-fit=no, viewport-fit=cover"
         />
 
         {/* PWA standalone mode on iOS */}
