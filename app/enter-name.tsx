@@ -104,7 +104,7 @@ export default function EnterName() {
                 onSubmitEditing={handleJoin}
               />
               <View style={styles.inputBar} />
-              <Text style={styles.pinHint}>Use the same PIN on all your devices</Text>
+              <Text style={styles.pinHint}>New here? Just make up any 4 digits.{'\n'}Joining again on a new device? Use your usual PIN.</Text>
             </View>
           </View>
 

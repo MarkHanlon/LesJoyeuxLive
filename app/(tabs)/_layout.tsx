@@ -15,6 +15,7 @@ export default function TabLayout() {
           backgroundColor: '#F5EDD6',
           borderTopColor: '#EDD9A3',
           borderTopWidth: 1.5,
+          paddingBottom: 4,
         },
         tabBarLabelStyle: {
           fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
@@ -28,7 +29,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>🏡</Text>
+            <Text style={{ fontSize: 16, color }}>🏡</Text>
           ),
         }}
       />
@@ -37,7 +38,7 @@ export default function TabLayout() {
         options={{
           title: 'Family',
           tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 20, color }}>🚪</Text>
+            <Text style={{ fontSize: 16, color }}>🚪</Text>
           ),
           // Hidden for non-admins
           tabBarButton: user?.isAdmin ? undefined : () => null,
