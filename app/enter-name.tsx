@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View,
   Image,
@@ -20,7 +20,15 @@ export default function EnterName() {
   const [error, setError] = useState('');
   const { register } = useAuth();
   const pinRef = useRef<TextInput>(null);
-  const [{ width, height }] = useState(() => Dimensions.get('window'));
+  const [dims, setDims] = useState(() => Dimensions.get('window'));
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      // Only update on rotation (width changes); ignore keyboard (height-only change)
+      setDims(prev => prev.width !== window.width ? window : prev);
+    });
+    return () => sub.remove();
+  }, []);
+  const { width, height } = dims;
 
   async function handleJoin() {
     if (!name.trim()) {
