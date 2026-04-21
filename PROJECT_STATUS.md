@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-20 (PIN auth planned; onboarding flow deployed)
+**Last Updated**: 2026-04-22 (push notifications fixed and verified working)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -8,6 +8,25 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 ---
 
 ## ✅ Completed Tasks
+
+### Auth & Access Control
+- [x] **Family onboarding** — name-based access; first user auto-approved as admin
+- [x] **PIN-based multi-device auth** — 4-digit PIN set on first registration; name + PIN retrieves existing account on new devices; wrong PIN → 401
+- [x] **Database schema** — `users` table with `pin_hash` (scrypt); `push_subscriptions` table; `/api/migrate` idempotent
+- [x] **API routes** — `POST /api/register`, `GET /api/status/[id]`, `GET /api/admin/users`, `POST /api/admin/approve/[id]`
+- [x] **Auth context** — `contexts/AuthContext.tsx`; screens: `enter-name.tsx`, `pending.tsx`, `app/(tabs)/admin.tsx`
+
+### iOS PWA Push Notifications
+- [x] **VAPID keys** configured (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` in Vercel env)
+- [x] **Service worker** — `public/sw.js` handles `push` and `notificationclick` events
+- [x] **Subscription flow** — admin enables via banner in admin tab; stored in `push_subscriptions`
+- [x] **Send function** — `api/push/_send.ts` (`sendPushToAdmins`); auto-cleans stale 410/404 endpoints
+- [x] **Trigger** — fires on new user registration (`api/register.ts` — awaited correctly so Vercel doesn't terminate early)
+- [x] **Test endpoint** — `POST /api/push/test` for smoke-testing delivery
+- [x] **Verified working** on iOS PWA (Apple push service endpoint confirmed)
+
+### My Visit Feature
+- [x] Arrival/departure date pickers, time slots, plate number saving
 
 ### Initial Setup
 - [x] Initialized Expo project with blank template
@@ -48,55 +67,19 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 
 ## 🔄 In Progress
 
-### PIN-based Multi-device Auth (2026-04-20)
-Replace device-UUID-only identity with name + PIN so the same person can log in from multiple devices. A 4-digit PIN is set on first registration; subsequent devices enter name + PIN to retrieve their existing account UUID.
-
-**Steps:**
-- [ ] **1. DB migration** — add `pin_hash TEXT` column to `users`; make `api/migrate.ts` idempotent (`ADD COLUMN IF NOT EXISTS`)
-- [ ] **2. Update `api/register.ts`** — accept `{ name, pin }`; hash PIN with Node `crypto` (scrypt/pbkdf2); three cases:
-  - name + correct PIN already exists → return existing UUID + status (multi-device login)
-  - name exists but wrong PIN → 401
-  - new name → create pending user with hashed PIN (first-ever user still auto-admin)
-- [ ] **3. Update `app/enter-name.tsx`** — add 4-digit PIN input; label adapts ("Set your PIN" vs "Enter your PIN") based on whether name is already known
-- [ ] **4. Update `contexts/AuthContext.tsx`** — pass PIN through to register call
-- [ ] **5. Reset DB + re-run migration** — existing users have no PIN hash; clear table and re-run `POST /api/migrate`
-- [ ] **6. Deploy + re-register** — `vercel deploy --prod`, then register as Mark (first user → auto-admin again)
-
----
-
-### Family Access / Onboarding Flow — ✅ Largely complete (2026-04-20)
-Name-based access control scaffolding — superseded by PIN work above for multi-device support.
-
-- [x] **Neon Postgres** — provisioned via Vercel Marketplace; `DATABASE_URL` in `.env.local` and Vercel project env
-- [x] **Database schema** — `users` table (UUID id, name, status, is_admin, created_at); `/api/migrate` endpoint (run once ✓)
-- [x] **AsyncStorage** — `@react-native-async-storage/async-storage` ^3.0.2 installed
-- [x] **API routes** — `POST /api/register`, `GET /api/status/[id]`, `GET /api/admin/users`, `POST /api/admin/approve/[id]`
-- [x] **Auth context** — `contexts/AuthContext.tsx`
-- [x] **Screens** — `enter-name.tsx`, `pending.tsx`, `app/(tabs)/admin.tsx` (French-provincial design)
-- [x] **Auth-aware root layout** — `app/_layout.tsx` + `app/(tabs)/_layout.tsx`
-- [x] **Deployed** — `vercel deploy --prod` ✓; migration run ✓
+_Nothing actively in progress — ready for next feature._
 
 ---
 
 ## 📋 To-Do / Requested by User
 
-### Database Setup
-- [x] Migrated from deprecated @vercel/postgres to @neondatabase/serverless
-- [ ] Provision Neon via Vercel Marketplace (`vercel integration add neon`)
-- [ ] Pull env vars locally (`vercel env pull .env.local`)
-- [ ] Create database schema for family organization features
-- [ ] Create migration files or setup scripts
-- [ ] Implement database connection in API routes
-
-### Core Features (User Requested)
+### Core Features (not yet started)
 - [ ] Family calendar/scheduling feature
 - [ ] Task/chore management system
 - [ ] Shopping list functionality
 - [ ] Family member profiles
-- [ ] Notifications/reminders
 
 ### Authentication & Security
-- [x] Implement authentication system — name-based, password-free family access (see In Progress above)
 - [ ] Add authorization/permissions per family member
 - [ ] Secure API routes with auth middleware
 
@@ -130,13 +113,12 @@ Name-based access control scaffolding — superseded by PIN work above for multi
 ---
 
 ## 🎯 Current Priority
-**Next Step** (in this order):
-1. **PWA configuration** — work through the "PWA Installation" task list above so the web build is installable on iOS and Android home screens
-2. **Link this folder to a Vercel project** (`vercel link`) — or import the GitHub repo via the Vercel dashboard for automatic preview/production deploys
-3. **First deploy** — push and verify the production URL serves the PWA over HTTPS
-4. **Generate and share QR code** — for family onboarding
-5. Provision Neon Postgres via Vercel Marketplace (`vercel integration add neon`) and `vercel env pull .env.local`
-6. Define requirements for first feature to implement
+Infrastructure is complete and working. Ready to build the first real family feature.
+
+**Remaining infrastructure nice-to-haves:**
+- Wire GitHub → Vercel auto-deploy (currently manual `vercel --prod`)
+- Lighthouse PWA audit
+- QR code for family onboarding sharing
 
 ---
 
