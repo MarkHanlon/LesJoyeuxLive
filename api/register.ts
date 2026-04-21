@@ -66,7 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `;
 
     if (user.status === 'pending') {
-      sendPushToAdmins(db, {
+      await sendPushToAdmins(db, {
         title: 'Someone is knocking 🚪',
         body: `${trimmedName} is waiting for your approval.`,
         url: '/(tabs)/admin',

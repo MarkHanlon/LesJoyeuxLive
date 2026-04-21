@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-19 (PWA config implemented)
+**Last Updated**: 2026-04-20 (PIN auth planned; onboarding flow deployed)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -48,27 +48,33 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 
 ## 🔄 In Progress
 
-### Family Access / Onboarding Flow (2026-04-20)
-Name-based, password-free family access control. First user auto-approved as admin.
+### PIN-based Multi-device Auth (2026-04-20)
+Replace device-UUID-only identity with name + PIN so the same person can log in from multiple devices. A 4-digit PIN is set on first registration; subsequent devices enter name + PIN to retrieve their existing account UUID.
 
 **Steps:**
-- [ ] **1. Neon Postgres** — provision via Vercel Marketplace, pull DATABASE_URL locally
-- [x] **2. Database schema** — `users` table (UUID id, name, status, is_admin, created_at); `/api/migrate` endpoint
-- [x] **3. Install AsyncStorage** — `@react-native-async-storage/async-storage` ^3.0.2 installed
-- [x] **4. API routes** (project-root `/api/` directory):
-  - `POST /api/register` — create user; first-ever user auto-approved as admin
-  - `GET /api/status/[id]` — poll current user's status
-  - `GET /api/admin/users` — list pending users (admin UUID in x-admin-id header)
-  - `POST /api/admin/approve/[id]` — approve a pending user
-- [x] **5. Auth context** — `contexts/AuthContext.tsx` done
-- [x] **6. Screens** — all three screens built with French-provincial design:
-  - `app/enter-name.tsx` — Bienvenue! name entry screen
-  - `app/pending.tsx` — "Hang tight!" chateau background + floating castle animation
-  - `app/(tabs)/admin.tsx` — pending users list with approve buttons (admin tab only)
-- [x] **7. Auth-aware root layout** — `app/_layout.tsx` + `app/(tabs)/_layout.tsx` updated
-- [ ] **8. Deploy** — `vercel deploy --prod`, hit `POST /api/migrate` once, register as Mark → auto-admin
+- [ ] **1. DB migration** — add `pin_hash TEXT` column to `users`; make `api/migrate.ts` idempotent (`ADD COLUMN IF NOT EXISTS`)
+- [ ] **2. Update `api/register.ts`** — accept `{ name, pin }`; hash PIN with Node `crypto` (scrypt/pbkdf2); three cases:
+  - name + correct PIN already exists → return existing UUID + status (multi-device login)
+  - name exists but wrong PIN → 401
+  - new name → create pending user with hashed PIN (first-ever user still auto-admin)
+- [ ] **3. Update `app/enter-name.tsx`** — add 4-digit PIN input; label adapts ("Set your PIN" vs "Enter your PIN") based on whether name is already known
+- [ ] **4. Update `contexts/AuthContext.tsx`** — pass PIN through to register call
+- [ ] **5. Reset DB + re-run migration** — existing users have no PIN hash; clear table and re-run `POST /api/migrate`
+- [ ] **6. Deploy + re-register** — `vercel deploy --prod`, then register as Mark (first user → auto-admin again)
 
-**Remaining:** Provision Neon (step 1) then deploy (step 8)
+---
+
+### Family Access / Onboarding Flow — ✅ Largely complete (2026-04-20)
+Name-based access control scaffolding — superseded by PIN work above for multi-device support.
+
+- [x] **Neon Postgres** — provisioned via Vercel Marketplace; `DATABASE_URL` in `.env.local` and Vercel project env
+- [x] **Database schema** — `users` table (UUID id, name, status, is_admin, created_at); `/api/migrate` endpoint (run once ✓)
+- [x] **AsyncStorage** — `@react-native-async-storage/async-storage` ^3.0.2 installed
+- [x] **API routes** — `POST /api/register`, `GET /api/status/[id]`, `GET /api/admin/users`, `POST /api/admin/approve/[id]`
+- [x] **Auth context** — `contexts/AuthContext.tsx`
+- [x] **Screens** — `enter-name.tsx`, `pending.tsx`, `app/(tabs)/admin.tsx` (French-provincial design)
+- [x] **Auth-aware root layout** — `app/_layout.tsx` + `app/(tabs)/_layout.tsx`
+- [x] **Deployed** — `vercel deploy --prod` ✓; migration run ✓
 
 ---
 

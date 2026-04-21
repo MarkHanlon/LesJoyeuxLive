@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "git push origin main",
+            "statusMessage": "Pushing to GitHub..."
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
