@@ -13,6 +13,30 @@ import { useAuth } from '../../contexts/AuthContext';
 
 type TimeSlot = 'morning' | 'lunchtime' | 'afternoon' | 'dinnertime' | 'evening';
 
+const DRINKS = [
+  { key: 'pastis',     label: 'Pastis',           hint: 'Ricard, 51…',              icon: '🌿' },
+  { key: 'kir',        label: 'Kir',              hint: 'white wine & cassis',       icon: '💜' },
+  { key: 'kir_royale', label: 'Kir Royale',       hint: 'crémant & cassis',          icon: '🥂' },
+  { key: 'cremant',    label: 'Crémant',          hint: 'or champagne',              icon: '🍾' },
+  { key: 'lillet',     label: 'Lillet Blanc',     hint: 'sur glace',                 icon: '🍸' },
+  { key: 'suze',       label: 'Suze',             hint: 'gentiane — très français',  icon: '🌼' },
+  { key: 'red_wine',   label: 'Red Wine',         hint: 'un rouge',                  icon: '🍷' },
+  { key: 'white_wine', label: 'White Wine',       hint: 'un blanc',                  icon: '🫗' },
+  { key: 'rose',       label: 'Rosé',             hint: 'rosé, bien sûr',            icon: '🌸' },
+  { key: 'gt',         label: 'G&T',              hint: 'gin & tonic',               icon: '🧊' },
+  { key: 'beer',       label: 'Beer',             hint: 'une bière',                 icon: '🍺' },
+  { key: 'sparkling',  label: 'Sparkling Water',  hint: 'eau pétillante',            icon: '💧' },
+  { key: 'oj',         label: 'Orange Juice',     hint: "jus d'orange",              icon: '🍊' },
+  { key: 'lemonade',   label: 'Lemonade',         hint: 'citron pressé',             icon: '🍋' },
+  { key: 'cola',       label: 'Cola',             hint: 'Coca, Pepsi…',              icon: '🥤' },
+] as const;
+
+type DrinkKey = typeof DRINKS[number]['key'] | 'later';
+
+function drinkByKey(key: string | null) {
+  return DRINKS.find(d => d.key === key) ?? null;
+}
+
 const SLOTS: { key: TimeSlot; label: string; hint: string }[] = [
   { key: 'morning',    label: 'Morning',     hint: 'before lunch' },
   { key: 'lunchtime',  label: 'Lunchtime',   hint: 'around 1pm' },
@@ -28,6 +52,7 @@ type VisitPlan = {
   saveDinner: boolean;
   departDate: string;
   departSlot: TimeSlot;
+  aperitif: DrinkKey | null;
 };
 
 function todayStr(): string {
@@ -57,7 +82,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning' };
+  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -157,6 +182,42 @@ function SlotPicker({ value, onChange }: { value: TimeSlot; onChange: (s: TimeSl
   );
 }
 
+// ── Drink picker ────────────────────────────────────────────────────────────
+
+function DrinkPicker({ value, onChange }: { value: DrinkKey | null; onChange: (d: DrinkKey) => void }) {
+  return (
+    <View>
+      <View style={styles.drinkGrid}>
+        {DRINKS.map(d => {
+          const active = value === d.key;
+          return (
+            <TouchableOpacity
+              key={d.key}
+              style={[styles.drinkCard, active && styles.drinkCardActive]}
+              onPress={() => onChange(d.key as DrinkKey)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.drinkIcon}>{d.icon}</Text>
+              <Text style={[styles.drinkLabel, active && styles.drinkLabelActive]}>{d.label}</Text>
+              <Text style={styles.drinkHint}>{d.hint}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <TouchableOpacity
+        style={[styles.drinkLater, value === 'later' && styles.drinkLaterActive]}
+        onPress={() => onChange('later')}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.drinkLaterIcon}>🎲</Text>
+        <Text style={[styles.drinkLaterLabel, value === 'later' && styles.drinkLaterLabelActive]}>
+          I'll choose on the day!
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ── Main screen ─────────────────────────────────────────────────────────────
 
 export default function VisitScreen() {
@@ -180,6 +241,7 @@ export default function VisitScreen() {
           saveDinner: !!d.save_dinner,
           departDate: String(d.depart_date).slice(0, 10),
           departSlot: d.depart_slot as TimeSlot,
+          aperitif:   (d.aperitif as DrinkKey) ?? null,
         };
         setSaved(plan);
         setForm(plan);
@@ -216,6 +278,7 @@ export default function VisitScreen() {
           saveDinner: form.saveDinner,
           departDate: form.departDate,
           departSlot: form.departSlot,
+          aperitif:   form.aperitif,
         }),
       });
       if (res.ok) {
@@ -273,6 +336,30 @@ export default function VisitScreen() {
             {saved.saveLunch  && <Text style={styles.plateNote}>🍽  Lunch plate saved for you</Text>}
             {saved.saveDinner && <Text style={styles.plateNote}>🍽  Dinner plate saved for you</Text>}
           </View>
+
+          {saved.aperitif && (
+            <>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryAperitifBlock}>
+                <Text style={styles.summaryEyebrow}>Apéritif</Text>
+                {saved.aperitif === 'later' ? (
+                  <View style={styles.summaryDrinkRow}>
+                    <Text style={styles.summaryDrinkIcon}>🎲</Text>
+                    <Text style={styles.summaryDrinkName}>I'll choose on the day!</Text>
+                  </View>
+                ) : (
+                  <View style={styles.summaryDrinkRow}>
+                    <Text style={styles.summaryDrinkIcon}>{drinkByKey(saved.aperitif)?.icon}</Text>
+                    <View>
+                      <Text style={styles.summaryDrinkName}>{drinkByKey(saved.aperitif)?.label}</Text>
+                      <Text style={styles.summaryDrinkHint}>{drinkByKey(saved.aperitif)?.hint}</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
           <View style={styles.summaryDivider} />
           <View style={styles.summaryBlock}>
             <Text style={styles.summaryEyebrow}>Leaving</Text>
@@ -319,6 +406,13 @@ export default function VisitScreen() {
                 />
               </View>
             )}
+          </View>
+
+          {/* Apéritif section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionEyebrow}>APÉRITIF 🥂</Text>
+            <Text style={styles.sectionSubLabel}>What will you be having?</Text>
+            <DrinkPicker value={form.aperitif} onChange={d => updateForm({ aperitif: d })} />
           </View>
 
           {/* Departure section */}
@@ -622,6 +716,104 @@ const styles = StyleSheet.create({
     fontFamily: 'Raleway, system-ui, sans-serif',
     color: '#8B6245',
     marginTop: 2,
+  },
+
+  // Drink picker grid
+  drinkGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  drinkCard: {
+    width: '47%',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#EDD9A3',
+    backgroundColor: '#FAF4E6',
+    alignItems: 'center',
+    gap: 3,
+  },
+  drinkCardActive: {
+    borderColor: '#C85A2E',
+    backgroundColor: '#FDF8EF',
+  },
+  drinkIcon: {
+    fontSize: 26,
+  },
+  drinkLabel: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#5C3D2E',
+    textAlign: 'center',
+  },
+  drinkLabelActive: {
+    color: '#C85A2E',
+  },
+  drinkHint: {
+    fontSize: 10,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#A08060',
+    textAlign: 'center',
+  },
+  drinkLater: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#EDD9A3',
+    backgroundColor: '#FAF4E6',
+    marginTop: 8,
+    gap: 8,
+  },
+  drinkLaterActive: {
+    borderColor: '#C8973D',
+    backgroundColor: '#FFF8ED',
+  },
+  drinkLaterIcon: {
+    fontSize: 20,
+  },
+  drinkLaterLabel: {
+    fontSize: 14,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '600',
+    color: '#8B6245',
+    fontStyle: 'italic',
+  },
+  drinkLaterLabelActive: {
+    color: '#C8973D',
+  },
+
+  // Summary aperitif block
+  summaryAperitifBlock: {
+    paddingVertical: 4,
+  },
+  summaryDrinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  summaryDrinkIcon: {
+    fontSize: 36,
+  },
+  summaryDrinkName: {
+    fontSize: 20,
+    fontFamily: 'Playfair Display, Georgia, serif',
+    fontWeight: '700',
+    color: '#1A1209',
+  },
+  summaryDrinkHint: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245',
+    fontStyle: 'italic',
+    marginTop: 1,
   },
 
   // Buttons
