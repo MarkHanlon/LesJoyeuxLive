@@ -33,7 +33,11 @@ export default function InstallPrompt() {
   const slideAnim = useRef(new Animated.Value(200)).current;
 
   useEffect(() => {
-    if (isStandalone()) return;
+    if (isStandalone()) {
+      // App is installed — clear the flag so the prompt shows again if they ever uninstall
+      localStorage.removeItem(DISMISSED_KEY);
+      return;
+    }
     if (localStorage.getItem(DISMISSED_KEY)) return;
 
     const p = detectPlatform();
