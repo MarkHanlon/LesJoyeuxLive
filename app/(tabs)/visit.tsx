@@ -40,6 +40,12 @@ function addDays(dateStr: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function addMonths(dateStr: string, n: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -58,8 +64,20 @@ function defaultPlan(): VisitPlan {
 
 function DateRow({ value, onChange, minDate }: { value: string; onChange: (d: string) => void; minDate?: string }) {
   const canGoBack = !minDate || value > minDate;
+  const canGoBackMonth = !minDate || addMonths(value, -1) >= minDate;
+
   return (
     <View style={styles.dateRow}>
+      {Platform.OS !== 'web' && (
+        <TouchableOpacity
+          style={[styles.navBtn, styles.navBtnMonth, !canGoBackMonth && styles.navBtnDisabled]}
+          onPress={() => canGoBackMonth && onChange(addMonths(value, -1))}
+          disabled={!canGoBackMonth}
+          activeOpacity={0.6}
+        >
+          <Text style={[styles.navArrow, styles.navArrowMonth, !canGoBackMonth && styles.navArrowDisabled]}>«</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity
         style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]}
         onPress={() => canGoBack && onChange(addDays(value, -1))}
@@ -68,10 +86,45 @@ function DateRow({ value, onChange, minDate }: { value: string; onChange: (d: st
       >
         <Text style={[styles.navArrow, !canGoBack && styles.navArrowDisabled]}>‹</Text>
       </TouchableOpacity>
-      <Text style={styles.dateText}>{formatDate(value)}</Text>
+
+      <View style={styles.dateTextWrapper}>
+        <Text style={styles.dateText}>{formatDate(value)}</Text>
+        {Platform.OS === 'web' && (
+          // Transparent overlay triggers the browser's native date picker on tap
+          <input
+            type="date"
+            value={value}
+            min={minDate ?? ''}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              if (e.target.value) onChange(e.target.value);
+            }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              opacity: 0,
+              cursor: 'pointer',
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              padding: 0,
+              margin: 0,
+            } as React.CSSProperties}
+          />
+        )}
+      </View>
+
       <TouchableOpacity style={styles.navBtn} onPress={() => onChange(addDays(value, 1))} activeOpacity={0.6}>
         <Text style={styles.navArrow}>›</Text>
       </TouchableOpacity>
+      {Platform.OS !== 'web' && (
+        <TouchableOpacity
+          style={[styles.navBtn, styles.navBtnMonth]}
+          onPress={() => onChange(addMonths(value, 1))}
+          activeOpacity={0.6}
+        >
+          <Text style={[styles.navArrow, styles.navArrowMonth]}>»</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -473,13 +526,25 @@ const styles = StyleSheet.create({
   navArrowDisabled: {
     color: '#B8956A',
   },
+  dateTextWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
   dateText: {
     fontSize: 18,
     fontFamily: 'Playfair Display, Georgia, serif',
     fontWeight: '700',
     color: '#1A1209',
     textAlign: 'center',
-    flex: 1,
+  },
+  navBtnMonth: {
+    opacity: 0.7,
+  },
+  navArrowMonth: {
+    fontSize: 22,
+    lineHeight: 30,
   },
 
   // Slot picker (radio list)
