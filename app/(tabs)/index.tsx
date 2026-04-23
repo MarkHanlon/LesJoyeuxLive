@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -45,11 +45,12 @@ export default function HomeScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
 
-  // Photo ticker — use refs to avoid stale closures in the interval
+  // Photo ticker — native uses Animated crossfade; web uses CSS opacity transition
   const indexRef = useRef(0);
   const [displayIdx, setDisplayIdx] = useState(0);
   const [prevIdx, setPrevIdx] = useState(0);
   const crossfade = useRef(new Animated.Value(1)).current;
+  const [webIdx, setWebIdx] = useState(0);
 
   // visit: undefined = loading, null = not set, object = set
   const [visit, setVisit] = useState<VisitData | undefined>(undefined);
@@ -68,8 +69,12 @@ export default function HomeScreen() {
       .catch(() => setVisit(null));
   }, [user]);
 
-  // Auto-advance ticker with crossfade
+  // Auto-advance ticker
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      const id = setInterval(() => setWebIdx(i => (i + 1) % PHOTOS.length), HOLD_MS + FADE_MS);
+      return () => clearInterval(id);
+    }
     const interval = setInterval(() => {
       const next = (indexRef.current + 1) % PHOTOS.length;
       setPrevIdx(indexRef.current);
@@ -133,24 +138,47 @@ export default function HomeScreen() {
 
         {/* Photo ticker */}
         <View style={styles.photoCard}>
-          {/* Previous photo fades out */}
-          <Animated.Image
-            source={{ uri: PHOTOS[prevIdx].uri }}
-            style={[styles.photo, { opacity: prevOpacity }]}
-            resizeMode="cover"
-          />
-          {/* Current photo fades in */}
-          <Animated.Image
-            source={{ uri: PHOTOS[displayIdx].uri }}
-            style={[styles.photo, { opacity: crossfade }]}
-            resizeMode="cover"
-          />
-          {/* Progress dots */}
-          <View style={styles.dots}>
-            {PHOTOS.map((_, i) => (
-              <View key={i} style={[styles.dot, i === displayIdx && styles.dotActive]} />
-            ))}
-          </View>
+          {Platform.OS === 'web' ? (
+            // Web: CSS opacity transitions — no Animated API, no GPU compositing pressure
+            <>
+              {PHOTOS.map((photo, i) => (
+                <Image
+                  key={photo.uri}
+                  source={{ uri: photo.uri }}
+                  style={[styles.photo, {
+                    opacity: i === webIdx ? 1 : 0,
+                    // @ts-ignore — web-only CSS property
+                    transition: 'opacity 0.7s ease-in-out',
+                  }]}
+                  resizeMode="cover"
+                />
+              ))}
+              <View style={styles.dots}>
+                {PHOTOS.map((_, i) => (
+                  <View key={i} style={[styles.dot, i === webIdx && styles.dotActive]} />
+                ))}
+              </View>
+            </>
+          ) : (
+            // Native: Animated crossfade
+            <>
+              <Animated.Image
+                source={{ uri: PHOTOS[prevIdx].uri }}
+                style={[styles.photo, { opacity: prevOpacity }]}
+                resizeMode="cover"
+              />
+              <Animated.Image
+                source={{ uri: PHOTOS[displayIdx].uri }}
+                style={[styles.photo, { opacity: crossfade }]}
+                resizeMode="cover"
+              />
+              <View style={styles.dots}>
+                {PHOTOS.map((_, i) => (
+                  <View key={i} style={[styles.dot, i === displayIdx && styles.dotActive]} />
+                ))}
+              </View>
+            </>
+          )}
         </View>
 
         {/* CTA — only render once visit state is known */}

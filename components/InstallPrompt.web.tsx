@@ -49,11 +49,15 @@ export default function InstallPrompt() {
     }
 
     if (p === 'android') {
+      // Show banner immediately — Chrome only fires beforeinstallprompt once
+      // engagement criteria are met, so we show manual instructions by default
+      // and upgrade to a native install button if the event fires.
+      setPlatform('android');
+      slideIn();
+
       const handler = (e: Event) => {
         e.preventDefault();
         setDeferredPrompt(e as BeforeInstallPromptEvent);
-        setPlatform('android');
-        slideIn();
       };
       window.addEventListener('beforeinstallprompt', handler);
       return () => window.removeEventListener('beforeinstallprompt', handler);
@@ -80,15 +84,15 @@ export default function InstallPrompt() {
   }
 
   async function handleInstall() {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setPlatform(null);
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') setPlatform(null);
+      else dismiss();
+      setDeferredPrompt(null);
     } else {
       dismiss();
     }
-    setDeferredPrompt(null);
   }
 
   if (!platform) return null;
@@ -102,17 +106,33 @@ export default function InstallPrompt() {
 
       {platform === 'android' && (
         <>
-          <Text style={styles.body}>
-            Add the app to your home screen for quick access — no app store needed.
-          </Text>
-          <View style={styles.row}>
-            <Pressable style={styles.installBtn} onPress={handleInstall}>
-              <Text style={styles.installBtnText}>Add to Home Screen</Text>
-            </Pressable>
-            <Pressable style={styles.dismissBtn} onPress={dismiss}>
-              <Text style={styles.dismissBtnText}>Not now</Text>
-            </Pressable>
-          </View>
+          {deferredPrompt ? (
+            <>
+              <Text style={styles.body}>
+                Add the app to your home screen for quick access — no app store needed.
+              </Text>
+              <View style={styles.row}>
+                <Pressable style={styles.installBtn} onPress={handleInstall}>
+                  <Text style={styles.installBtnText}>Add to Home Screen</Text>
+                </Pressable>
+                <Pressable style={styles.dismissBtn} onPress={dismiss}>
+                  <Text style={styles.dismissBtnText}>Not now</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.body}>Install this app on your home screen:</Text>
+              <View style={styles.steps}>
+                <Step n={1} text="Tap the menu icon ⋮ at the top-right of Chrome" />
+                <Step n={2} text={'Tap “Add to Home Screen”'} />
+                <Step n={3} text={'Tap “Add” to confirm'} />
+              </View>
+              <Pressable style={styles.dismissBtn} onPress={dismiss}>
+                <Text style={styles.dismissBtnText}>Got it, I'll do this now</Text>
+              </Pressable>
+            </>
+          )}
         </>
       )}
 
