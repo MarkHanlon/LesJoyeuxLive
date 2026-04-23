@@ -34,7 +34,7 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 - [x] **Photo ticker** — 5 placeholder images crossfade every 3 s; two stacked `Animated.Image` layers swap with 700 ms opacity crossfade; progress pill-dots
 - [x] **Ambient background** — current/previous photos rendered at 150% scale, ~14% opacity, blurred; crossfades in sync with ticker for a shifting colour wash behind the UI
 - [x] **Visit CTA** — adapts to 5 states: no visit (Plan My Visit prompt), future visit (big serif countdown + arrival date), today (celebration), currently visiting (Bienvenue + departure date), past visit (Plan Next Visit prompt)
-- [ ] Replace `PHOTOS` placeholder array with real family photo URIs when photo library is ready
+- [ ] Wire real photos into the `PHOTOS` array in `app/(tabs)/index.tsx` — four photos now in `public/`: `cheers.JPG`, `chicken-pond.JPG`, `simon-bra.jpg`, `show.jpg`; update the array to use `/cheers.JPG` etc.
 
 ### PWA Icons & Install Prompt
 - [x] **French château icon set** — stone château with three pointed towers, red flags, battlements on forest green; all four sizes regenerated (192, 512, 512-maskable, apple-touch-icon) via `scripts/generate-icons.js` using `sharp`; `public/favicon.png` added
