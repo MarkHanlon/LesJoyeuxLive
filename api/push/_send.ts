@@ -12,19 +12,11 @@ function initWebPush() {
   return true;
 }
 
-export async function sendPushToAdmins(
+async function sendToSubscriptions(
   db: NeonQueryFunction<false, false>,
+  subscriptions: { endpoint: string; p256dh: string; auth: string }[],
   payload: Payload
 ): Promise<void> {
-  if (!initWebPush()) return;
-
-  const subscriptions = await db`
-    SELECT ps.endpoint, ps.p256dh, ps.auth
-    FROM push_subscriptions ps
-    JOIN users u ON u.id = ps.user_id
-    WHERE u.is_admin = true
-  `;
-
   await Promise.allSettled(
     subscriptions.map(async (sub) => {
       try {
@@ -39,4 +31,32 @@ export async function sendPushToAdmins(
       }
     })
   );
+}
+
+export async function sendPushToAdmins(
+  db: NeonQueryFunction<false, false>,
+  payload: Payload
+): Promise<void> {
+  if (!initWebPush()) return;
+  const subs = await db`
+    SELECT ps.endpoint, ps.p256dh, ps.auth
+    FROM push_subscriptions ps
+    JOIN users u ON u.id = ps.user_id
+    WHERE u.is_admin = true
+  `;
+  await sendToSubscriptions(db, subs as any, payload);
+}
+
+export async function sendPushToAll(
+  db: NeonQueryFunction<false, false>,
+  payload: Payload
+): Promise<void> {
+  if (!initWebPush()) return;
+  const subs = await db`
+    SELECT ps.endpoint, ps.p256dh, ps.auth
+    FROM push_subscriptions ps
+    JOIN users u ON u.id = ps.user_id
+    WHERE u.status = 'approved'
+  `;
+  await sendToSubscriptions(db, subs as any, payload);
 }

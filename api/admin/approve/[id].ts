@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb } from '../../db';
+import { sendPushToAll } from '../../push/_send';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -25,6 +26,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `;
 
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Notify everyone that a new family member has been welcomed
+    await sendPushToAll(db, {
+      title: '👋 New family member!',
+      body: `${user.name} has just joined Les Joyeux Live.`,
+    });
+
     res.status(200).json(user);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

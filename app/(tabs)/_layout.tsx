@@ -47,10 +47,8 @@ export default function TabLayout() {
         options={{
           title: 'Family',
           tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 16, color }}>🚪</Text>
+            <Text style={{ fontSize: 16, color }}>👨‍👩‍👧‍👦</Text>
           ),
-          // Hidden for non-admins
-          tabBarButton: user?.isAdmin ? undefined : () => null,
         }}
       />
     </Tabs>
