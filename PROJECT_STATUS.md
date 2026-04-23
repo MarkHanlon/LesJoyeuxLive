@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-22 (push notifications fixed and verified working)
+**Last Updated**: 2026-04-23
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -26,7 +26,19 @@ Family organization Progressive Web App using Expo, Expo Router, and Neon Postgr
 - [x] **Verified working** on iOS PWA (Apple push service endpoint confirmed)
 
 ### My Visit Feature
-- [x] Arrival/departure date pickers, time slots, plate number saving
+- [x] Arrival/departure date pickers with calendar — on web/PWA tapping the date opens the browser's native date picker; on native, `«»` month-jump buttons added alongside day arrows
+- [x] Time slots, plate saving (lunch/dinner)
+- [x] **Apéritif selection** — separate section card with 2-column drink grid (15 drinks: Pastis, Kir, Kir Royale, Crémant, Lillet, Suze, wines, G&T, beer, soft drinks) plus "I'll choose on the day!"; drink shown with emoji in summary view; `aperitif` column added to `visits` table via `ADD COLUMN IF NOT EXISTS`
+
+### Home Screen
+- [x] **Photo ticker** — 5 placeholder images crossfade every 3 s; two stacked `Animated.Image` layers swap with 700 ms opacity crossfade; progress pill-dots
+- [x] **Ambient background** — current/previous photos rendered at 150% scale, ~14% opacity, blurred; crossfades in sync with ticker for a shifting colour wash behind the UI
+- [x] **Visit CTA** — adapts to 5 states: no visit (Plan My Visit prompt), future visit (big serif countdown + arrival date), today (celebration), currently visiting (Bienvenue + departure date), past visit (Plan Next Visit prompt)
+- [ ] Replace `PHOTOS` placeholder array with real family photo URIs when photo library is ready
+
+### PWA Icons & Install Prompt
+- [x] **French château icon set** — stone château with three pointed towers, red flags, battlements on forest green; all four sizes regenerated (192, 512, 512-maskable, apple-touch-icon) via `scripts/generate-icons.js` using `sharp`; `public/favicon.png` added
+- [x] **Install prompt re-shows after uninstall** — clears dismissed flag when app runs in standalone mode so returning Safari users see the prompt again
 
 ### Initial Setup
 - [x] Initialized Expo project with blank template
@@ -94,7 +106,7 @@ _Nothing actively in progress — ready for next feature._
 - [x] Deploy the Expo web build to Vercel — live at **https://les-joyeux-live.vercel.app** (linked via `vercel link --yes --project les-joyeux-live`, deployed via `vercel deploy`; GitHub auto-deploy still needs wiring via Vercel dashboard)
 - [ ] Generate a QR code pointing at the production URL (or a custom subdomain) for easy family sharing
 - [ ] Manually test the *Add to Home Screen* flow end-to-end on at least one iPhone (Safari) and one Android (Chrome) device
-- [x] **Install prompt UX**: created `components/InstallPrompt.web.tsx` — detects browser vs. standalone mode; Android shows native install sheet via `beforeinstallprompt`; iOS shows step-by-step Share → Add to Home Screen instructions; dismissal persisted to localStorage; slides in with spring animation; wired into root layout via `app/_layout.tsx`
+- [x] **Install prompt UX**: created `components/InstallPrompt.web.tsx` — detects browser vs. standalone mode; Android shows native install sheet via `beforeinstallprompt`; iOS shows step-by-step Share → Add to Home Screen instructions; dismissal persisted to localStorage; slides in with spring animation; wired into root layout via `app/_layout.tsx`; re-shows after uninstall (clears dismissed flag in standalone mode)
 - [ ] **Follow-up (optional, not required for v1)**: add a service worker for offline support — Expo does not ship one by default; Workbox/Serwist plugin, or a custom `public/sw.js`
 
 ### Other UI/UX Development
@@ -113,9 +125,10 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-Infrastructure is complete and working. Ready to build the first real family feature.
+Core UX is taking shape. Home screen, visit planning, and apéritif selection are all working.
 
-**Remaining infrastructure nice-to-haves:**
+**Next up:**
+- Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
 - Wire GitHub → Vercel auto-deploy (currently manual `vercel --prod`)
 - Lighthouse PWA audit
 - QR code for family onboarding sharing
