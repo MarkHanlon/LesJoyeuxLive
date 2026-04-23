@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-23 (Family page + community notifications)
+**Last Updated**: 2026-04-23 (Admin remove-member + invalid date fix)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -90,6 +90,9 @@ _Nothing actively in progress — ready for next feature._
 - [x] **Member cards** — all approved users shown with: avatar, name, admin badge, visit status (here now / arriving date+slot / in N days / no plans), aperitif emoji for specific drink selections
 - [x] **Admin section** — pending approvals shown below family list for admins only, with divider; quiet "all caught up" message when queue is empty
 - [x] **Community notifications on acceptance** — `sendPushToAll` sends "👋 New family member!" to every approved subscriber (not just admins) when someone is approved; new `GET /api/family/members` endpoint authenticated by any approved user
+- [x] **Admin remove-member** — admins can remove approved (non-admin) family members; `DELETE /api/admin/remove/[id]` with guards: cannot remove self or another admin; confirmation prompt shown before deletion
+- [x] **Admin screen refactor** — two-section layout: pending approvals + approved members with remove button; `GET /api/admin/users` now returns all non-admin users (pending + approved)
+- [x] **Invalid date bug fix** — Postgres DATE columns were returned as JS Date objects by `@neondatabase/serverless`, causing "Invalid Date" display; fixed by casting `arrive_date` and `depart_date` to `::text` in `api/visit/[id].ts`
 
 ### Core Features (not yet started)
 - [ ] Family calendar/scheduling feature
