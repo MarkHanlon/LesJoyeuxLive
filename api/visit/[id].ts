@@ -25,10 +25,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     )
   `;
   await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
+  await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
+  await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
 
   if (req.method === 'GET') {
     const rows = await db`
-      SELECT arrive_date::text, arrive_slot, save_lunch, save_dinner, depart_date::text, depart_slot, aperitif
+      SELECT
+        arrive_date::text,
+        arrive_slot,
+        save_lunch,
+        save_dinner,
+        depart_date::text,
+        depart_slot,
+        aperitif,
+        CASE WHEN tonight_date = CURRENT_DATE THEN tonight_aperitif ELSE NULL END AS tonight_aperitif
       FROM visits WHERE user_id = ${id} LIMIT 1
     `;
     if (rows.length === 0) return res.status(404).json({ visit: null });

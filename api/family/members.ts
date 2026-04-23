@@ -10,6 +10,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const db = getDb();
 
   await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
+  await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
+  await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
 
   const [caller] = await db`
     SELECT id FROM users WHERE id = ${userId} AND status = 'approved'
@@ -25,7 +27,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       v.arrive_slot                     AS "arriveSlot",
       v.depart_date::text               AS "departDate",
       v.depart_slot                     AS "departSlot",
-      v.aperitif
+      COALESCE(
+        CASE WHEN v.tonight_date = CURRENT_DATE THEN v.tonight_aperitif ELSE NULL END,
+        v.aperitif
+      )                                 AS "aperitif"
     FROM  users u
     LEFT  JOIN visits v ON v.user_id = u.id
     WHERE u.status = 'approved'

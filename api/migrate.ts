@@ -46,6 +46,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       )
     `;
     await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
+    await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
+    await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
 
     await db`
       CREATE TABLE IF NOT EXISTS push_subscriptions (

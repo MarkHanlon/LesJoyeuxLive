@@ -53,6 +53,7 @@ type VisitPlan = {
   departDate: string;
   departSlot: TimeSlot;
   aperitif: DrinkKey | null;
+  tonightAperitif: DrinkKey | null; // tonight-only override, null if not set for today
 };
 
 function todayStr(): string {
@@ -82,7 +83,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null };
+  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -227,6 +228,9 @@ export default function VisitScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [saved, setSaved] = useState<VisitPlan | null>(null);
   const [form, setForm] = useState<VisitPlan>(defaultPlan());
+  const [isChangingDrink, setIsChangingDrink] = useState(false);
+  const [pendingDrink, setPendingDrink] = useState<DrinkKey | null>(null);
+  const [isSavingDrink, setIsSavingDrink] = useState(false);
 
   const fetchVisit = useCallback(async () => {
     if (!user) return;
@@ -235,13 +239,14 @@ export default function VisitScreen() {
       if (res.ok) {
         const d = await res.json();
         const plan: VisitPlan = {
-          arriveDate: String(d.arrive_date).slice(0, 10),
-          arriveSlot: d.arrive_slot as TimeSlot,
-          saveLunch:  !!d.save_lunch,
-          saveDinner: !!d.save_dinner,
-          departDate: String(d.depart_date).slice(0, 10),
-          departSlot: d.depart_slot as TimeSlot,
-          aperitif:   (d.aperitif as DrinkKey) ?? null,
+          arriveDate:      String(d.arrive_date).slice(0, 10),
+          arriveSlot:      d.arrive_slot as TimeSlot,
+          saveLunch:       !!d.save_lunch,
+          saveDinner:      !!d.save_dinner,
+          departDate:      String(d.depart_date).slice(0, 10),
+          departSlot:      d.depart_slot as TimeSlot,
+          aperitif:        (d.aperitif as DrinkKey) ?? null,
+          tonightAperitif: (d.tonight_aperitif as DrinkKey) ?? null,
         };
         setSaved(plan);
         setForm(plan);
@@ -295,6 +300,35 @@ export default function VisitScreen() {
     setIsEditing(false);
   }
 
+  async function saveQuickDrink(tonight: boolean) {
+    if (!user || !pendingDrink) return;
+    setIsSavingDrink(true);
+    try {
+      const res = await fetch(`/api/visit/drink/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ aperitif: pendingDrink, tonight }),
+      });
+      if (res.ok) {
+        setSaved(prev => prev ? {
+          ...prev,
+          aperitif:        tonight ? prev.aperitif : pendingDrink,
+          tonightAperitif: tonight ? pendingDrink : null,
+        } : prev);
+        setIsChangingDrink(false);
+        setPendingDrink(null);
+      }
+    } finally {
+      setIsSavingDrink(false);
+    }
+  }
+
+  const today = todayStr();
+  const isStaying = !!(saved && today >= saved.arriveDate && today <= saved.departDate);
+  // The drink to display: tonight override takes precedence while staying
+  const effectiveDrink = isStaying && saved?.tonightAperitif ? saved.tonightAperitif : saved?.aperitif ?? null;
+  const hasTonightOverride = isStaying && !!saved?.tonightAperitif;
+
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centred]}>
@@ -337,22 +371,87 @@ export default function VisitScreen() {
             {saved.saveDinner && <Text style={styles.plateNote}>🍽  Dinner plate saved for you</Text>}
           </View>
 
-          {saved.aperitif && (
+          {(effectiveDrink || isStaying) && (
             <>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryAperitifBlock}>
-                <Text style={styles.summaryEyebrow}>Apéritif</Text>
-                {saved.aperitif === 'later' ? (
-                  <View style={styles.summaryDrinkRow}>
-                    <Text style={styles.summaryDrinkIcon}>🎲</Text>
-                    <Text style={styles.summaryDrinkName}>I'll choose on the day!</Text>
-                  </View>
-                ) : (
-                  <View style={styles.summaryDrinkRow}>
-                    <Text style={styles.summaryDrinkIcon}>{drinkByKey(saved.aperitif)?.icon}</Text>
-                    <View>
-                      <Text style={styles.summaryDrinkName}>{drinkByKey(saved.aperitif)?.label}</Text>
-                      <Text style={styles.summaryDrinkHint}>{drinkByKey(saved.aperitif)?.hint}</Text>
+                <Text style={styles.summaryEyebrow}>
+                  {hasTonightOverride ? "TONIGHT'S APÉRITIF ✨" : 'APÉRITIF'}
+                </Text>
+
+                {effectiveDrink && (
+                  effectiveDrink === 'later' ? (
+                    <View style={styles.summaryDrinkRow}>
+                      <Text style={styles.summaryDrinkIcon}>🎲</Text>
+                      <Text style={styles.summaryDrinkName}>I'll choose on the day!</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.summaryDrinkRow}>
+                      <Text style={styles.summaryDrinkIcon}>{drinkByKey(effectiveDrink)?.icon}</Text>
+                      <View>
+                        <Text style={styles.summaryDrinkName}>{drinkByKey(effectiveDrink)?.label}</Text>
+                        <Text style={styles.summaryDrinkHint}>{drinkByKey(effectiveDrink)?.hint}</Text>
+                      </View>
+                    </View>
+                  )
+                )}
+
+                {hasTonightOverride && saved?.aperitif && saved.aperitif !== saved.tonightAperitif && (
+                  <Text style={styles.tonightNote}>
+                    Back to {drinkByKey(saved.aperitif)?.label ?? saved.aperitif} {drinkByKey(saved.aperitif)?.icon ?? ''} tomorrow
+                  </Text>
+                )}
+
+                {/* Quick drink change — only shown while staying */}
+                {isStaying && !isChangingDrink && (
+                  <TouchableOpacity
+                    style={styles.changeDrinkBtn}
+                    onPress={() => {
+                      setPendingDrink(effectiveDrink);
+                      setIsChangingDrink(true);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.changeDrinkBtnText}>
+                      {hasTonightOverride ? '🍹 Change my mind again?' : '🍹 Fancy something different tonight?'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {isStaying && isChangingDrink && (
+                  <View style={styles.quickDrinkPanel}>
+                    <DrinkPicker value={pendingDrink} onChange={setPendingDrink} />
+                    <TouchableOpacity
+                      style={styles.quickDrinkCancel}
+                      onPress={() => { setIsChangingDrink(false); setPendingDrink(null); }}
+                    >
+                      <Text style={styles.quickDrinkCancelText}>
+                        Actually, keep my {drinkByKey(effectiveDrink)?.label ?? 'drink'}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.quickDrinkBtnRow}>
+                      <TouchableOpacity
+                        style={[styles.quickDrinkBtnTonight, (!pendingDrink || isSavingDrink) && styles.quickDrinkBtnDisabled]}
+                        onPress={() => saveQuickDrink(true)}
+                        disabled={!pendingDrink || isSavingDrink}
+                        activeOpacity={0.8}
+                      >
+                        {isSavingDrink
+                          ? <ActivityIndicator color="#1A1209" size="small" />
+                          : <Text style={styles.quickDrinkBtnTonightText}>Just for tonight</Text>
+                        }
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.quickDrinkBtnStay, (!pendingDrink || isSavingDrink) && styles.quickDrinkBtnDisabled]}
+                        onPress={() => saveQuickDrink(false)}
+                        disabled={!pendingDrink || isSavingDrink}
+                        activeOpacity={0.8}
+                      >
+                        {isSavingDrink
+                          ? <ActivityIndicator color="#F5EDD6" size="small" />
+                          : <Text style={styles.quickDrinkBtnStayText}>For my whole stay</Text>
+                        }
+                      </TouchableOpacity>
                     </View>
                   </View>
                 )}
@@ -814,6 +913,82 @@ const styles = StyleSheet.create({
     color: '#8B6245',
     fontStyle: 'italic',
     marginTop: 1,
+  },
+
+  // Tonight quick-change
+  tonightNote: {
+    fontSize: 12,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245',
+    fontStyle: 'italic',
+    marginTop: 6,
+  },
+  changeDrinkBtn: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 50,
+    borderWidth: 1.5,
+    borderColor: '#C85A2E',
+    alignSelf: 'flex-start',
+  },
+  changeDrinkBtnText: {
+    fontSize: 14,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '600',
+    color: '#C85A2E',
+  },
+  quickDrinkPanel: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#EDD9A3',
+    gap: 12,
+  },
+  quickDrinkCancel: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+  },
+  quickDrinkCancelText: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#B8956A',
+    textDecorationLine: 'underline',
+    fontStyle: 'italic',
+  },
+  quickDrinkBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickDrinkBtnTonight: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 50,
+    borderWidth: 1.5,
+    borderColor: '#C85A2E',
+    alignItems: 'center',
+  },
+  quickDrinkBtnTonightText: {
+    fontSize: 14,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#C85A2E',
+  },
+  quickDrinkBtnStay: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 50,
+    backgroundColor: '#2D5A3D',
+    alignItems: 'center',
+  },
+  quickDrinkBtnStayText: {
+    fontSize: 14,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#F5EDD6',
+  },
+  quickDrinkBtnDisabled: {
+    opacity: 0.45,
   },
 
   // Buttons
