@@ -182,12 +182,17 @@ function MemberCard({
         {isHere ? (
           <Text style={styles.visitHere}>● Here until {formatDate(member.departDate!)}</Text>
         ) : isFuture ? (
-          <Text style={styles.visitFuture}>
-            Arriving {formatDate(member.arriveDate!)}, {slotLabel(member.arriveSlot!)}
-            {days !== null && days <= 14
-              ? `  ·  ${days === 0 ? 'today!' : days === 1 ? 'tomorrow!' : `in ${days} days`}`
-              : ''}
-          </Text>
+          <>
+            <Text style={styles.visitFuture}>
+              Arriving {formatDate(member.arriveDate!)}, {slotLabel(member.arriveSlot!)}
+              {days !== null && days <= 14
+                ? `  ·  ${days === 0 ? 'today!' : days === 1 ? 'tomorrow!' : `in ${days} days`}`
+                : ''}
+            </Text>
+            <Text style={styles.visitLeaving}>
+              Leaving {formatDate(member.departDate!)}, {slotLabel(member.departSlot!)}
+            </Text>
+          </>
         ) : (
           <Text style={styles.visitNone}>No upcoming visit</Text>
         )}
@@ -452,6 +457,7 @@ const styles = StyleSheet.create({
   adminBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245', letterSpacing: 0.5 },
   visitHere: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#2D5A3D', marginTop: 3 },
   visitFuture: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 3, lineHeight: 17 },
+  visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
   visitNone: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginTop: 3 },
   drinkBadge: { fontSize: 28, flexShrink: 0 },
   removeBtn: {
