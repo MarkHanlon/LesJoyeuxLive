@@ -30,8 +30,8 @@
       "shortName": "JoyeuxLive",
       "description": "Family organization app — calendar, tasks, shopping lists, and more.",
       "lang": "en",
-      "themeColor": "#4A90D9",
-      "backgroundColor": "#ffffff",
+      "themeColor": "#1C3D2A",
+      "backgroundColor": "#F5EDD6",
       "display": "standalone",
       "orientation": "portrait"
     },

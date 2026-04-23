@@ -1,3 +1,10 @@
+// Required for Chrome on Android to consider the site PWA-installable
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request));
+  }
+});
+
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   const { title, body, url } = event.data.json();
