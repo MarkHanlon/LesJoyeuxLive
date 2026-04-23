@@ -101,19 +101,21 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
 
-      {/* ── Ambient background: zoomed, blurred, nearly transparent ── */}
-      <View style={[StyleSheet.absoluteFill, styles.ambientClip]} pointerEvents="none">
-        <Animated.Image
-          source={{ uri: PHOTOS[prevIdx].uri }}
-          style={[styles.ambientBg, { opacity: bgPrev }]}
-          blurRadius={blur}
-        />
-        <Animated.Image
-          source={{ uri: PHOTOS[displayIdx].uri }}
-          style={[styles.ambientBg, { opacity: bgNext }]}
-          blurRadius={blur}
-        />
-      </View>
+      {/* ── Ambient background: skip on web — CSS blur crashes Chrome Android ── */}
+      {Platform.OS !== 'web' && (
+        <View style={[StyleSheet.absoluteFill, styles.ambientClip]} pointerEvents="none">
+          <Animated.Image
+            source={{ uri: PHOTOS[prevIdx].uri }}
+            style={[styles.ambientBg, { opacity: bgPrev }]}
+            blurRadius={blur}
+          />
+          <Animated.Image
+            source={{ uri: PHOTOS[displayIdx].uri }}
+            style={[styles.ambientBg, { opacity: bgNext }]}
+            blurRadius={blur}
+          />
+        </View>
+      )}
 
       {/* ── Main content ── */}
       <View style={styles.content}>
