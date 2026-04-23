@@ -218,6 +218,7 @@ export default function FamilyScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
+  const [rejectingIds, setRejectingIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
   const fetchAll = useCallback(async (showRefresh = false) => {
@@ -240,6 +241,20 @@ export default function FamilyScreen() {
   }, [user]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  async function reject(userId: string) {
+    if (!user) return;
+    setRejectingIds(prev => new Set(prev).add(userId));
+    try {
+      const res = await fetch(`/api/admin/remove/${userId}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-id': user.id },
+      });
+      if (res.ok) setPending(prev => prev.filter(u => u.id !== userId));
+    } finally {
+      setRejectingIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
+    }
+  }
 
   async function approve(userId: string) {
     if (!user) return;
@@ -308,23 +323,6 @@ export default function FamilyScreen() {
             <RefreshControl refreshing={isRefreshing} onRefresh={() => fetchAll(true)} tintColor="#C85A2E" />
           }
         >
-          {members.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>🌿</Text>
-              <Text style={styles.emptyTitle}>Just you so far</Text>
-              <Text style={styles.emptyBody}>Share the link with family to get them on board.</Text>
-            </View>
-          ) : (
-            members.map(m => (
-              <MemberCard
-                key={m.id}
-                member={m}
-                onRemove={(user?.isAdmin && !m.isAdmin) ? () => confirmRemove(m) : undefined}
-                removing={removingIds.has(m.id)}
-              />
-            ))
-          )}
-
           {user?.isAdmin && pending.length > 0 && (
             <>
               <View style={styles.sectionDivider}>
@@ -343,9 +341,20 @@ export default function FamilyScreen() {
                     <Text style={styles.visitNone}>Joined {timeAgo(person.createdAt)}</Text>
                   </View>
                   <TouchableOpacity
+                    style={[styles.rejectBtn, rejectingIds.has(person.id) && styles.rejectBtnBusy]}
+                    onPress={() => reject(person.id)}
+                    disabled={rejectingIds.has(person.id) || approvingIds.has(person.id)}
+                    activeOpacity={0.8}
+                  >
+                    {rejectingIds.has(person.id)
+                      ? <ActivityIndicator color="#C85A2E" size="small" />
+                      : <Text style={styles.rejectBtnText}>Reject</Text>
+                    }
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     style={[styles.approveBtn, approvingIds.has(person.id) && styles.approveBtnBusy]}
                     onPress={() => approve(person.id)}
-                    disabled={approvingIds.has(person.id)}
+                    disabled={approvingIds.has(person.id) || rejectingIds.has(person.id)}
                     activeOpacity={0.8}
                   >
                     {approvingIds.has(person.id)
@@ -355,7 +364,30 @@ export default function FamilyScreen() {
                   </TouchableOpacity>
                 </View>
               ))}
+
+              <View style={styles.sectionDivider}>
+                <View style={styles.sectionDividerLine} />
+                <Text style={styles.sectionDividerLabel}>Family members</Text>
+                <View style={styles.sectionDividerLine} />
+              </View>
             </>
+          )}
+
+          {members.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyEmoji}>🌿</Text>
+              <Text style={styles.emptyTitle}>Just you so far</Text>
+              <Text style={styles.emptyBody}>Share the link with family to get them on board.</Text>
+            </View>
+          ) : (
+            members.map(m => (
+              <MemberCard
+                key={m.id}
+                member={m}
+                onRemove={(user?.isAdmin && !m.isAdmin) ? () => confirmRemove(m) : undefined}
+                removing={removingIds.has(m.id)}
+              />
+            ))
           )}
 
           {user?.isAdmin && pending.length === 0 && members.length > 0 && (
@@ -408,6 +440,12 @@ const styles = StyleSheet.create({
   },
   removeBtnBusy: { opacity: 0.5 },
   removeBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', letterSpacing: 0.3 },
+  rejectBtn: {
+    borderWidth: 1.5, borderColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 50, minWidth: 64, alignItems: 'center', flexShrink: 0,
+  },
+  rejectBtnBusy: { opacity: 0.5 },
+  rejectBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', letterSpacing: 0.3 },
   approveBtn: {
     backgroundColor: '#2D5A3D', paddingVertical: 10, paddingHorizontal: 14,
     borderRadius: 50, minWidth: 90, alignItems: 'center', flexShrink: 0,
