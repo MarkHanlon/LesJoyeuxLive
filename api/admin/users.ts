@@ -24,7 +24,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         is_admin   AS "isAdmin",
         created_at AS "createdAt"
       FROM  users
-      WHERE is_admin = false AND status = 'pending'
+      WHERE status = 'pending'
+        AND is_admin = false
       ORDER BY created_at ASC
     `;
 

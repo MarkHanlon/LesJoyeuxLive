@@ -218,6 +218,7 @@ export default function FamilyScreen() {
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -225,6 +226,7 @@ export default function FamilyScreen() {
   const fetchAll = useCallback(async (showRefresh = false) => {
     if (!user) return;
     if (showRefresh) setIsRefreshing(true);
+    setFetchError(null);
     try {
       const requests: Promise<Response>[] = [
         fetch('/api/family/members', { headers: { 'x-user-id': user.id } }),
@@ -233,8 +235,18 @@ export default function FamilyScreen() {
         requests.push(fetch('/api/admin/users', { headers: { 'x-admin-id': user.id } }));
       }
       const [membersRes, pendingRes] = await Promise.all(requests);
-      if (membersRes.ok) setMembers(await membersRes.json());
-      if (pendingRes?.ok) setPending(await pendingRes.json());
+      if (membersRes.ok) {
+        const data = await membersRes.json();
+        setMembers(Array.isArray(data) ? data : []);
+      } else {
+        setFetchError(`Could not load family members (${membersRes.status})`);
+      }
+      if (pendingRes?.ok) {
+        const data = await pendingRes.json();
+        setPending(Array.isArray(data) ? data : []);
+      }
+    } catch (e: any) {
+      setFetchError(e.message ?? 'Network error');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -316,6 +328,13 @@ export default function FamilyScreen() {
       {isLoading ? (
         <View style={styles.centred}>
           <ActivityIndicator color="#C85A2E" size="large" />
+        </View>
+      ) : fetchError ? (
+        <View style={styles.centred}>
+          <Text style={styles.errorText}>⚠️ {fetchError}</Text>
+          <TouchableOpacity onPress={() => fetchAll()} style={{ marginTop: 16 }}>
+            <Text style={styles.retryText}>Tap to retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -461,6 +480,8 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 22, fontFamily: 'Playfair Display, Georgia, serif', fontStyle: 'italic', color: '#1A1209', marginBottom: 8 },
   emptyBody: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center', lineHeight: 22 },
   allClear: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', textAlign: 'center', fontStyle: 'italic', marginTop: 6 },
+  errorText: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', textAlign: 'center', paddingHorizontal: 32 },
+  retryText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', textDecorationLine: 'underline' },
 });
 
 const bannerStyles = StyleSheet.create({
