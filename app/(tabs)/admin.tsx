@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -240,7 +241,7 @@ export default function FamilyScreen() {
     }
   }, [user]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
 
   async function reject(userId: string) {
     if (!user) return;
