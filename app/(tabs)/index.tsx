@@ -4,13 +4,14 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 
 // Placeholder photos — swap src array for real family photo URIs when ready
-const PHOTOS = [
-  { uri: 'https://picsum.photos/seed/lj1/800/500' },
-  { uri: 'https://picsum.photos/seed/lj2/800/500' },
-  { uri: 'https://picsum.photos/seed/lj3/800/500' },
-  { uri: 'https://picsum.photos/seed/lj4/800/500' },
-  { uri: 'https://picsum.photos/seed/lj5/800/500' },
-];
+  const PHOTOS = [                                                                                                                                                                                                         
+    { uri: '/cheers.JPG' },                                                                                                                                                                                                
+    { uri: '/chicken-pond.JPG' },                                                                                                                                                                                          
+    { uri: '/simon-bra.jpg' },                                                                                                                                                                                             
+    { uri: '/show.jpg' },                                                                                                                                                                                                  
+    { uri: '/baby-pond.jpg' },                                                                                                                                                                                                  
+    { uri: '/john-tutu.jpg' },                                                                                                                                                                                                  
+  ];  
 
 const HOLD_MS = 3000;
 const FADE_MS = 700;
