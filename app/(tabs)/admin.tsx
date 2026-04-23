@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   RefreshControl,
   ScrollView,
@@ -10,7 +11,6 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
-
 
 function NotificationBanner({ userId }: { userId: string }) {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
@@ -98,7 +98,7 @@ function NotificationBanner({ userId }: { userId: string }) {
   );
 }
 
-type PendingUser = {
+type Member = {
   id: string;
   name: string;
   createdAt: string;
@@ -116,29 +116,30 @@ function timeAgo(dateStr: string): string {
 }
 
 function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map(w => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
 const AVATAR_PALETTE = ['#C85A2E', '#2D5A3D', '#C8973D', '#7B3F6E', '#3A6B8A', '#8B4513'];
-
 function avatarColor(name: string): string {
   return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
 }
 
+function SectionHeader({ title }: { title: string }) {
+  return <Text style={styles.sectionHeader}>{title}</Text>;
+}
+
 export default function AdminScreen() {
   const { user } = useAuth();
-  const [pending, setPending] = useState<PendingUser[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
-  const fetchPending = useCallback(
+  const pending  = members.filter(m => m.status === 'pending');
+  const approved = members.filter(m => m.status === 'approved');
+
+  const fetchMembers = useCallback(
     async (showRefresh = false) => {
       if (!user) return;
       if (showRefresh) setIsRefreshing(true);
@@ -146,7 +147,7 @@ export default function AdminScreen() {
         const res = await fetch('/api/admin/users', {
           headers: { 'x-admin-id': user.id },
         });
-        if (res.ok) setPending(await res.json());
+        if (res.ok) setMembers(await res.json());
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
@@ -156,24 +157,56 @@ export default function AdminScreen() {
   );
 
   useEffect(() => {
-    fetchPending();
-  }, [fetchPending]);
+    fetchMembers();
+  }, [fetchMembers]);
 
-  async function approve(userId: string) {
+  async function approve(memberId: string) {
     if (!user) return;
-    setApprovingIds(prev => new Set(prev).add(userId));
+    setApprovingIds(prev => new Set(prev).add(memberId));
     try {
-      await fetch(`/api/admin/approve/${userId}`, {
+      const res = await fetch(`/api/admin/approve/${memberId}`, {
         method: 'POST',
         headers: { 'x-admin-id': user.id },
       });
-      setPending(prev => prev.filter(u => u.id !== userId));
+      if (res.ok) {
+        setMembers(prev =>
+          prev.map(m => m.id === memberId ? { ...m, status: 'approved' } : m)
+        );
+      }
     } finally {
-      setApprovingIds(prev => {
-        const next = new Set(prev);
-        next.delete(userId);
-        return next;
+      setApprovingIds(prev => { const n = new Set(prev); n.delete(memberId); return n; });
+    }
+  }
+
+  function confirmRemove(member: Member) {
+    const doRemove = () => remove(member.id);
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove ${member.name} from the platform?`)) doRemove();
+    } else {
+      Alert.alert(
+        'Remove member',
+        `Remove ${member.name} from the platform? This cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Remove', style: 'destructive', onPress: doRemove },
+        ]
+      );
+    }
+  }
+
+  async function remove(memberId: string) {
+    if (!user) return;
+    setRemovingIds(prev => new Set(prev).add(memberId));
+    try {
+      const res = await fetch(`/api/admin/remove/${memberId}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-id': user.id },
       });
+      if (res.ok) {
+        setMembers(prev => prev.filter(m => m.id !== memberId));
+      }
+    } finally {
+      setRemovingIds(prev => { const n = new Set(prev); n.delete(memberId); return n; });
     }
   }
 
@@ -181,8 +214,8 @@ export default function AdminScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.fleur}>⚜</Text>
-        <Text style={styles.headline}>Who's knocking? 🚪</Text>
-        <Text style={styles.subline}>Family members waiting for access</Text>
+        <Text style={styles.headline}>Family 🚪</Text>
+        <Text style={styles.subline}>Manage who has access</Text>
       </View>
 
       {user && <NotificationBanner userId={user.id} />}
@@ -197,18 +230,16 @@ export default function AdminScreen() {
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={() => fetchPending(true)}
+              onRefresh={() => fetchMembers(true)}
               tintColor="#C85A2E"
             />
           }
         >
+          {/* ── Pending section ── */}
+          <SectionHeader title="Waiting to join" />
           {pending.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyEmoji}>🌿</Text>
-              <Text style={styles.emptyTitle}>All quiet</Text>
-              <Text style={styles.emptyBody}>
-                No one waiting to join right now.
-              </Text>
+            <View style={styles.emptySection}>
+              <Text style={styles.emptySectionText}>No one waiting right now 🌿</Text>
             </View>
           ) : (
             pending.map(person => (
@@ -216,17 +247,12 @@ export default function AdminScreen() {
                 <View style={[styles.avatar, { backgroundColor: avatarColor(person.name) }]}>
                   <Text style={styles.avatarText}>{initials(person.name)}</Text>
                 </View>
-
                 <View style={styles.info}>
                   <Text style={styles.personName}>{person.name}</Text>
-                  <Text style={styles.personTime}>Joined {timeAgo(person.createdAt)}</Text>
+                  <Text style={styles.personMeta}>Waiting · {timeAgo(person.createdAt)}</Text>
                 </View>
-
                 <TouchableOpacity
-                  style={[
-                    styles.approveBtn,
-                    approvingIds.has(person.id) && styles.approveBtnBusy,
-                  ]}
+                  style={[styles.approveBtn, approvingIds.has(person.id) && styles.approveBtnBusy]}
                   onPress={() => approve(person.id)}
                   disabled={approvingIds.has(person.id)}
                   activeOpacity={0.8}
@@ -240,6 +266,38 @@ export default function AdminScreen() {
               </View>
             ))
           )}
+
+          {/* ── Approved members section ── */}
+          <SectionHeader title="Family members" />
+          {approved.length === 0 ? (
+            <View style={styles.emptySection}>
+              <Text style={styles.emptySectionText}>No approved members yet</Text>
+            </View>
+          ) : (
+            approved.map(person => (
+              <View key={person.id} style={styles.card}>
+                <View style={[styles.avatar, { backgroundColor: avatarColor(person.name) }]}>
+                  <Text style={styles.avatarText}>{initials(person.name)}</Text>
+                </View>
+                <View style={styles.info}>
+                  <Text style={styles.personName}>{person.name}</Text>
+                  <Text style={styles.personMeta}>Member · joined {timeAgo(person.createdAt)}</Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.removeBtn, removingIds.has(person.id) && styles.removeBtnBusy]}
+                  onPress={() => confirmRemove(person)}
+                  disabled={removingIds.has(person.id)}
+                  activeOpacity={0.8}
+                >
+                  {removingIds.has(person.id) ? (
+                    <ActivityIndicator color="#C85A2E" size="small" />
+                  ) : (
+                    <Text style={styles.removeBtnText}>Remove</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ))
+          )}
         </ScrollView>
       )}
     </View>
@@ -247,10 +305,7 @@ export default function AdminScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5EDD6',
-  },
+  container: { flex: 1, backgroundColor: '#F5EDD6' },
   header: {
     paddingTop: 64,
     paddingHorizontal: 28,
@@ -258,11 +313,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.5,
     borderBottomColor: '#EDD9A3',
   },
-  fleur: {
-    fontSize: 18,
-    color: '#C8973D',
-    marginBottom: 8,
-  },
+  fleur: { fontSize: 18, color: '#C8973D', marginBottom: 8 },
   headline: {
     fontSize: 32,
     fontFamily: 'Playfair Display, Georgia, serif',
@@ -277,15 +328,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
     letterSpacing: 0.3,
   },
-  centred: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  centred: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listContent: { padding: 20, paddingBottom: 48, gap: 10 },
+  sectionHeader: {
+    fontSize: 11,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#C8973D',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 4,
   },
-  listContent: {
-    padding: 20,
-    paddingBottom: 48,
-    gap: 12,
+  emptySection: {
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  emptySectionText: {
+    fontSize: 14,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#B8956A',
+    fontStyle: 'italic',
   },
   card: {
     flexDirection: 'row',
@@ -317,16 +381,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  info: {
-    flex: 1,
-  },
+  info: { flex: 1 },
   personName: {
     fontSize: 17,
     fontFamily: 'Playfair Display, Georgia, serif',
     fontWeight: '700',
     color: '#1A1209',
   },
-  personTime: {
+  personMeta: {
     fontSize: 12,
     fontFamily: 'Raleway, system-ui, sans-serif',
     color: '#8B6245',
@@ -342,10 +404,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexShrink: 0,
   },
-  approveBtnBusy: {
-    backgroundColor: '#4A7A5A',
-    opacity: 0.8,
-  },
+  approveBtnBusy: { backgroundColor: '#4A7A5A', opacity: 0.8 },
   approveBtnText: {
     fontSize: 13,
     fontFamily: 'Raleway, system-ui, sans-serif',
@@ -353,27 +412,24 @@ const styles = StyleSheet.create({
     color: '#F5EDD6',
     letterSpacing: 0.3,
   },
-  empty: {
+  removeBtn: {
+    borderWidth: 1.5,
+    borderColor: '#C85A2E',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 50,
+    marginLeft: 10,
+    minWidth: 80,
     alignItems: 'center',
-    paddingVertical: 70,
+    flexShrink: 0,
   },
-  emptyEmoji: {
-    fontSize: 52,
-    marginBottom: 18,
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontFamily: 'Playfair Display, Georgia, serif',
-    fontStyle: 'italic',
-    color: '#1A1209',
-    marginBottom: 10,
-  },
-  emptyBody: {
-    fontSize: 15,
+  removeBtnBusy: { opacity: 0.5 },
+  removeBtnText: {
+    fontSize: 13,
     fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#8B6245',
-    textAlign: 'center',
-    lineHeight: 23,
+    fontWeight: '700',
+    color: '#C85A2E',
+    letterSpacing: 0.3,
   },
 });
 
@@ -388,12 +444,8 @@ const bannerStyles = StyleSheet.create({
     paddingVertical: 12,
     gap: 10,
   },
-  icon: {
-    fontSize: 20,
-  },
-  body: {
-    flex: 1,
-  },
+  icon: { fontSize: 20 },
+  body: { flex: 1 },
   text: {
     fontSize: 13,
     fontFamily: 'Raleway, system-ui, sans-serif',
@@ -414,9 +466,7 @@ const bannerStyles = StyleSheet.create({
     minWidth: 72,
     alignItems: 'center',
   },
-  btnBusy: {
-    opacity: 0.7,
-  },
+  btnBusy: { opacity: 0.7 },
   btnText: {
     fontSize: 13,
     fontFamily: 'Raleway, system-ui, sans-serif',

@@ -24,8 +24,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         is_admin   AS "isAdmin",
         created_at AS "createdAt"
       FROM  users
-      WHERE status = 'pending'
-      ORDER BY created_at ASC
+      WHERE is_admin = false
+      ORDER BY
+        CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+        created_at ASC
     `;
 
     res.status(200).json(users);

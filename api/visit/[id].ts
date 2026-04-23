@@ -28,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'GET') {
     const rows = await db`
-      SELECT arrive_date, arrive_slot, save_lunch, save_dinner, depart_date, depart_slot, aperitif
+      SELECT arrive_date::text, arrive_slot, save_lunch, save_dinner, depart_date::text, depart_slot, aperitif
       FROM visits WHERE user_id = ${id} LIMIT 1
     `;
     if (rows.length === 0) return res.status(404).json({ visit: null });
@@ -57,7 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         depart_slot = EXCLUDED.depart_slot,
         aperitif    = EXCLUDED.aperitif,
         updated_at  = NOW()
-      RETURNING arrive_date, arrive_slot, save_lunch, save_dinner, depart_date, depart_slot, aperitif
+      RETURNING arrive_date::text, arrive_slot, save_lunch, save_dinner, depart_date::text, depart_slot, aperitif
     `;
     return res.status(200).json(row);
   }
