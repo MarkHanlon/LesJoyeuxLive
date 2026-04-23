@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-23
+**Last Updated**: 2026-04-23 (Family page + community notifications)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -85,15 +85,26 @@ _Nothing actively in progress — ready for next feature._
 
 ## 📋 To-Do / Requested by User
 
+### Family Page
+- [x] **Family tab open to all** — removed admin-only restriction; tab icon updated to 👨‍👩‍👧‍👦
+- [x] **Member cards** — all approved users shown with: avatar, name, admin badge, visit status (here now / arriving date+slot / in N days / no plans), aperitif emoji for specific drink selections
+- [x] **Admin section** — pending approvals shown below family list for admins only, with divider; quiet "all caught up" message when queue is empty
+- [x] **Community notifications on acceptance** — `sendPushToAll` sends "👋 New family member!" to every approved subscriber (not just admins) when someone is approved; new `GET /api/family/members` endpoint authenticated by any approved user
+
 ### Core Features (not yet started)
 - [ ] Family calendar/scheduling feature
 - [ ] Task/chore management system
 - [ ] Shopping list functionality
 - [ ] Family member profiles
+- [ ] Allocation of people to rooms
+
+### Admin features
+- [ ] Ability to print out schedule of all people, by room / date
 
 ### Authentication & Security
 - [ ] Add authorization/permissions per family member
 - [ ] Secure API routes with auth middleware
+- [ ] Ability to make some users Admin
 
 ### PWA Installation (iPhone + Android, share via link / QR code)
 **Goal**: Family members scan a QR code → open the Vercel URL in their phone browser → *Add to Home Screen* (iOS Safari) or accept the install prompt (Android Chrome) → app launches standalone with its own icon, no browser chrome.
