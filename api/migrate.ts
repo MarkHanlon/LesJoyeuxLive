@@ -40,10 +40,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         save_dinner BOOLEAN     NOT NULL DEFAULT false,
         depart_date DATE        NOT NULL,
         depart_slot TEXT        NOT NULL,
+        aperitif    TEXT,
         updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(user_id)
       )
     `;
+    await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
 
     await db`
       CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -56,6 +58,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
+
+    if (req.query.reset === 'true') {
+      await db`TRUNCATE push_subscriptions, visits, users RESTART IDENTITY CASCADE`;
+    }
 
     res.status(200).json({ ok: true, message: 'Database ready' });
   } catch (err: any) {

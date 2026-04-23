@@ -9,6 +9,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const db = getDb();
 
+  await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
+
   const [caller] = await db`
     SELECT id FROM users WHERE id = ${userId} AND status = 'approved'
   `;

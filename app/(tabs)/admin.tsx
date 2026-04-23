@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -279,7 +279,7 @@ export default function FamilyScreen() {
       });
       setPending(prev => prev.filter(u => u.id !== userId));
       const res = await fetch('/api/family/members', { headers: { 'x-user-id': user.id } });
-      if (res.ok) setMembers(await res.json());
+      if (res.ok) { const d = await res.json(); setMembers(Array.isArray(d) ? d : []); }
     } finally {
       setApprovingIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
     }
