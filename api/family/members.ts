@@ -12,6 +12,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
   await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
   await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
+  await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'guest'`;
+  await db`UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'guest'`;
 
   const [caller] = await db`
     SELECT id FROM users WHERE id = ${userId} AND status = 'approved'
@@ -23,6 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       u.id,
       u.name,
       u.is_admin                        AS "isAdmin",
+      COALESCE(u.role, 'guest')         AS "role",
       v.arrive_date::text               AS "arriveDate",
       v.arrive_slot                     AS "arriveSlot",
       v.depart_date::text               AS "departDate",

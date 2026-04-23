@@ -30,6 +30,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`TRUNCATE users`;
     }
 
+    await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'guest'`;
+    await db`UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'guest'`;
+
     await db`
       CREATE TABLE IF NOT EXISTS visits (
         id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

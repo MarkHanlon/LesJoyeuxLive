@@ -90,15 +90,24 @@ function NotificationBanner({ userId }: { userId: string }) {
   );
 }
 
+type Role = 'guest' | 'staff' | 'admin';
+
 type FamilyMember = {
   id: string;
   name: string;
   isAdmin: boolean;
+  role: Role;
   arriveDate: string | null;
   arriveSlot: string | null;
   departDate: string | null;
   departSlot: string | null;
   aperitif: string | null;
+};
+
+const ROLE_CONFIG: Record<Role, { label: string; bg: string; border: string; text: string }> = {
+  guest: { label: 'Guest',  bg: '#FFF8EE', border: '#C8973D', text: '#8B6245' },
+  staff: { label: 'Staff',  bg: '#EEF4F8', border: '#3A6B8A', text: '#3A6B8A' },
+  admin: { label: 'Admin',  bg: '#EEF6EE', border: '#2D5A3D', text: '#2D5A3D' },
 };
 
 type PendingUser = {
@@ -123,7 +132,10 @@ function formatDate(dateStr: string) {
   });
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function daysUntil(dateStr: string) {
   const now = new Date(); now.setHours(0, 0, 0, 0);
@@ -151,10 +163,14 @@ function MemberCard({
   member,
   onRemove,
   removing,
+  onRoleChange,
+  changingRole,
 }: {
   member: FamilyMember;
   onRemove?: () => void;
   removing?: boolean;
+  onRoleChange?: (role: Role) => void;
+  changingRole?: boolean;
 }) {
   const today = todayStr();
   const hasVisit = !!(member.arriveDate && member.departDate);
@@ -163,55 +179,85 @@ function MemberCard({
   const days     = isFuture ? daysUntil(member.arriveDate!) : null;
   const drinkIcon = member.aperitif ? (DRINK_ICONS[member.aperitif] ?? null) : null;
 
-  return (
-    <View style={styles.card}>
-      <View style={[styles.avatar, { backgroundColor: avatarColor(member.name) }]}>
-        <Text style={styles.avatarText}>{initials(member.name)}</Text>
-      </View>
+  const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
 
-      <View style={styles.memberInfo}>
-        <View style={styles.memberNameRow}>
-          <Text style={styles.memberName}>{member.name}</Text>
-          {member.isAdmin && (
-            <View style={styles.adminBadge}>
-              <Text style={styles.adminBadgeText}>admin</Text>
+  return (
+    <View style={[styles.card, (onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}>
+      {/* Main row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <View style={[styles.avatar, { backgroundColor: avatarColor(member.name) }]}>
+          <Text style={styles.avatarText}>{initials(member.name)}</Text>
+        </View>
+
+        <View style={styles.memberInfo}>
+          <View style={styles.memberNameRow}>
+            <Text style={styles.memberName}>{member.name}</Text>
+            <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border }]}>
+              <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
             </View>
+          </View>
+
+          {isHere ? (
+            <Text style={styles.visitHere}>● Here until {formatDate(member.departDate!)}</Text>
+          ) : isFuture ? (
+            <>
+              <Text style={styles.visitFuture}>
+                Arriving {formatDate(member.arriveDate!)}, {slotLabel(member.arriveSlot!)}
+                {days !== null && days <= 14
+                  ? `  ·  ${days === 0 ? 'today!' : days === 1 ? 'tomorrow!' : `in ${days} days`}`
+                  : ''}
+              </Text>
+              <Text style={styles.visitLeaving}>
+                Leaving {formatDate(member.departDate!)}, {slotLabel(member.departSlot!)}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.visitNone}>No upcoming visit</Text>
           )}
         </View>
 
-        {isHere ? (
-          <Text style={styles.visitHere}>● Here until {formatDate(member.departDate!)}</Text>
-        ) : isFuture ? (
-          <>
-            <Text style={styles.visitFuture}>
-              Arriving {formatDate(member.arriveDate!)}, {slotLabel(member.arriveSlot!)}
-              {days !== null && days <= 14
-                ? `  ·  ${days === 0 ? 'today!' : days === 1 ? 'tomorrow!' : `in ${days} days`}`
-                : ''}
-            </Text>
-            <Text style={styles.visitLeaving}>
-              Leaving {formatDate(member.departDate!)}, {slotLabel(member.departSlot!)}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.visitNone}>No upcoming visit</Text>
+        {drinkIcon && !onRemove && <Text style={styles.drinkBadge}>{drinkIcon}</Text>}
+
+        {onRemove && (
+          <TouchableOpacity
+            style={[styles.removeBtn, removing && styles.removeBtnBusy]}
+            onPress={onRemove}
+            disabled={removing}
+            activeOpacity={0.8}
+          >
+            {removing
+              ? <ActivityIndicator color="#C85A2E" size="small" />
+              : <Text style={styles.removeBtnText}>Remove</Text>
+            }
+          </TouchableOpacity>
         )}
       </View>
 
-      {drinkIcon && !onRemove && <Text style={styles.drinkBadge}>{drinkIcon}</Text>}
-
-      {onRemove && (
-        <TouchableOpacity
-          style={[styles.removeBtn, removing && styles.removeBtnBusy]}
-          onPress={onRemove}
-          disabled={removing}
-          activeOpacity={0.8}
-        >
-          {removing
-            ? <ActivityIndicator color="#C85A2E" size="small" />
-            : <Text style={styles.removeBtnText}>Remove</Text>
-          }
-        </TouchableOpacity>
+      {/* Role selector — admin-only */}
+      {onRoleChange && (
+        <View style={styles.roleRow}>
+          {(['guest', 'staff', 'admin'] as Role[]).map(r => {
+            const rc = ROLE_CONFIG[r];
+            const active = member.role === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                style={[
+                  styles.roleChip,
+                  active && { backgroundColor: rc.bg, borderColor: rc.border },
+                  changingRole && { opacity: 0.5 },
+                ]}
+                onPress={() => !active && onRoleChange(r)}
+                disabled={active || changingRole}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.roleChipText, active && { color: rc.text, fontWeight: '700' }]}>
+                  {rc.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
     </View>
   );
@@ -227,6 +273,7 @@ export default function FamilyScreen() {
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [changingRoleIds, setChangingRoleIds] = useState<Set<string>>(new Set());
 
   const fetchAll = useCallback(async (showRefresh = false) => {
     if (!user) return;
@@ -317,6 +364,25 @@ export default function FamilyScreen() {
       if (res.ok) setMembers(prev => prev.filter(m => m.id !== memberId));
     } finally {
       setRemovingIds(prev => { const n = new Set(prev); n.delete(memberId); return n; });
+    }
+  }
+
+  async function changeRole(memberId: string, role: Role) {
+    if (!user) return;
+    setChangingRoleIds(prev => new Set(prev).add(memberId));
+    try {
+      const res = await fetch(`/api/admin/role/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-admin-id': user.id },
+        body: JSON.stringify({ role }),
+      });
+      if (res.ok) {
+        setMembers(prev => prev.map(m =>
+          m.id === memberId ? { ...m, role, isAdmin: role === 'admin' } : m
+        ));
+      }
+    } finally {
+      setChangingRoleIds(prev => { const n = new Set(prev); n.delete(memberId); return n; });
     }
   }
 
@@ -411,6 +477,8 @@ export default function FamilyScreen() {
                 member={m}
                 onRemove={(user?.isAdmin && !m.isAdmin) ? () => confirmRemove(m) : undefined}
                 removing={removingIds.has(m.id)}
+                onRoleChange={(user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
+                changingRole={changingRoleIds.has(m.id)}
               />
             ))
           )}
@@ -455,6 +523,11 @@ const styles = StyleSheet.create({
   memberName: { fontSize: 16, fontFamily: 'Playfair Display, Georgia, serif', fontWeight: '700', color: '#1A1209' },
   adminBadge: { backgroundColor: '#EDD9A3', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   adminBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245', letterSpacing: 0.5 },
+  roleBadge: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
+  roleBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', letterSpacing: 0.5 },
+  roleRow: { flexDirection: 'row', gap: 8 },
+  roleChip: { flex: 1, paddingVertical: 8, borderRadius: 50, borderWidth: 1.5, borderColor: '#EDD9A3', backgroundColor: '#FAF4E6', alignItems: 'center' },
+  roleChipText: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#B8956A', letterSpacing: 0.3 },
   visitHere: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#2D5A3D', marginTop: 3 },
   visitFuture: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 3, lineHeight: 17 },
   visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
