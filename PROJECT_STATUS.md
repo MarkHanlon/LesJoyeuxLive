@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-23 (Admin remove-member + invalid date fix)
+**Last Updated**: 2026-04-26 (Vercel function consolidation + routing fixes)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -94,6 +94,13 @@ _Nothing actively in progress — ready for next feature._
 - [x] **Admin screen refactor** — two-section layout: pending approvals + approved members with remove button; `GET /api/admin/users` now returns all non-admin users (pending + approved)
 - [x] **Invalid date bug fix** — Postgres DATE columns were returned as JS Date objects by `@neondatabase/serverless`, causing "Invalid Date" display; fixed by casting `arrive_date` and `depart_date` to `::text` in `api/visit/[id].ts`
 
+### Vercel Function Consolidation (2026-04-26)
+- [x] **Hit Hobby plan 12-function limit** — 14 individual `api/*.ts` files exceeded Vercel's free tier cap
+- [x] **Consolidated to single catch-all** — all API handlers merged into `api/[...path].ts`; helper modules use underscore prefix (`_db.ts`, `push/_send.ts`) to be excluded from function count; result: 14 functions → 1 function
+- [x] **Path routing hardened** — dual-source path parsing: tries `req.url` first (strips `/api/` prefix), falls back to `req.query.path` catch-all parameter (Expo's `moduleResolution: bundler` tsconfig can interfere with the latter)
+- [x] **Login routing fixed** — `POST /api/register` now routes correctly after `req.url`-based parsing
+- [ ] **Family/visit routing** — fix pushed (ebb8277) but not yet deployed to Vercel; `GET /api/family/members` and `GET /api/visit/:id` were returning 404 — awaiting manual `vercel --prod` deploy + test
+
 ### Core Features (not yet started)
 - [ ] Family calendar/scheduling feature
 - [ ] Task/chore management system
@@ -139,7 +146,11 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-Core UX is taking shape. Home screen, visit planning, and apéritif selection are all working.
+**Immediate**: Deploy routing fix and verify family/visit tabs load correctly.
+```
+vercel --prod
+```
+Then test: Family tab (family members list), My Visit tab (Mark's visit data).
 
 **Next up:**
 - Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
