@@ -23,7 +23,10 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path ?? ''];
+  // Parse path from req.url directly — more reliable than req.query.path with Expo's tsconfig
+  const urlPathname = (req.url ?? '').split('?')[0];
+  const apiPath = urlPathname.replace(/^\/api\//, '').replace(/^\//, '');
+  const segments = apiPath ? apiPath.split('/') : [];
   const [seg0, seg1, seg2] = segments;
   const method = req.method ?? 'GET';
 
