@@ -23,10 +23,28 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Parse path from req.url directly — more reliable than req.query.path with Expo's tsconfig
-  const urlPathname = (req.url ?? '').split('?')[0];
-  const apiPath = urlPathname.replace(/^\/api\//, '').replace(/^\//, '');
-  const segments = apiPath ? apiPath.split('/') : [];
+  // Parse path using all available sources — Vercel can expose different things
+  // depending on how the function is invoked (catch-all vs rewrite vs direct)
+  let segments: string[] = [];
+
+  // Source 1: req.url (full request path, e.g. /api/family/members)
+  const rawUrl = (req.url ?? '').split('?')[0];
+  if (rawUrl && rawUrl !== '/' && !rawUrl.includes('[...')) {
+    const stripped = rawUrl.replace(/^\/api\//, '').replace(/^\//, '');
+    const fromUrl = stripped.split('/').filter(Boolean);
+    if (fromUrl.length > 0) segments = fromUrl;
+  }
+
+  // Source 2: req.query.path from the [...path] catch-all parameter
+  if (segments.length === 0) {
+    const qp = req.query.path;
+    if (Array.isArray(qp) && qp.some(Boolean)) {
+      segments = qp.filter(Boolean);
+    } else if (typeof qp === 'string' && qp) {
+      segments = qp.split('/').filter(Boolean);
+    }
+  }
+
   const [seg0, seg1, seg2] = segments;
   const method = req.method ?? 'GET';
 
