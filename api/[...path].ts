@@ -69,6 +69,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }));
 
   try {
+    // GET /api/_debug/users — lists all users (TEMPORARY, remove after debugging)
+    if (seg0 === '_debug' && seg1 === 'users' && !seg2) {
+      const db = getDb();
+      const users = await db`
+        SELECT id, name, status, is_admin AS "isAdmin", role, created_at AS "createdAt"
+        FROM users ORDER BY created_at ASC
+      `;
+      return res.status(200).json({ count: users.length, users });
+    }
+
     // GET /api/_debug — dumps request internals, useful for diagnosing routing issues
     if (seg0 === '_debug' && !seg1) {
       return res.status(200).json({
