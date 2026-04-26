@@ -26,13 +26,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Parse path using all available sources — Vercel can expose different things
   // depending on how the function is invoked (catch-all vs rewrite vs direct)
   let segments: string[] = [];
+  let segmentSource = 'none';
 
   // Source 1: req.url (full request path, e.g. /api/family/members)
   const rawUrl = (req.url ?? '').split('?')[0];
   if (rawUrl && rawUrl !== '/' && !rawUrl.includes('[...')) {
     const stripped = rawUrl.replace(/^\/api\//, '').replace(/^\//, '');
     const fromUrl = stripped.split('/').filter(Boolean);
-    if (fromUrl.length > 0) segments = fromUrl;
+    if (fromUrl.length > 0) {
+      segments = fromUrl;
+      segmentSource = 'req.url';
+    }
   }
 
   // Source 2: req.query.path from the [...path] catch-all parameter
@@ -40,15 +44,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const qp = req.query.path;
     if (Array.isArray(qp) && qp.some(Boolean)) {
       segments = qp.filter(Boolean);
+      segmentSource = 'req.query.path (array)';
     } else if (typeof qp === 'string' && qp) {
       segments = qp.split('/').filter(Boolean);
+      segmentSource = 'req.query.path (string)';
     }
   }
 
   const [seg0, seg1, seg2] = segments;
   const method = req.method ?? 'GET';
 
+  // Structured log visible in Vercel Function logs
+  console.log(JSON.stringify({
+    _api: true,
+    method,
+    rawUrl: req.url,
+    segmentSource,
+    segments,
+    query: req.query,
+    headers: {
+      'x-user-id': req.headers['x-user-id'] ? '(set)' : '(missing)',
+      'x-admin-id': req.headers['x-admin-id'] ? '(set)' : '(missing)',
+    },
+  }));
+
   try {
+    // GET /api/_debug — dumps request internals, useful for diagnosing routing issues
+    if (seg0 === '_debug' && !seg1) {
+      return res.status(200).json({
+        method,
+        rawUrl: req.url,
+        segmentSource,
+        segments,
+        query: req.query,
+        headers: req.headers,
+        env: {
+          DATABASE_URL: !!process.env.DATABASE_URL,
+          VAPID_PUBLIC_KEY: !!process.env.VAPID_PUBLIC_KEY,
+          VAPID_PRIVATE_KEY: !!process.env.VAPID_PRIVATE_KEY,
+          VAPID_SUBJECT: !!process.env.VAPID_SUBJECT,
+        },
+      });
+    }
+
     // POST /api/register
     if (seg0 === 'register' && !seg1) {
       if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -437,8 +475,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, message: 'Database ready' });
     }
 
-    return res.status(404).json({ error: 'Not found' });
+    return res.status(404).json({
+      error: 'Not found',
+      debug: { method, rawUrl: req.url, segmentSource, segments },
+    });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    console.error(JSON.stringify({ _api: true, error: err.message, stack: err.stack, method, rawUrl: req.url, segments }));
+    return res.status(500).json({ error: err.message, debug: { method, rawUrl: req.url, segments } });
   }
 }
