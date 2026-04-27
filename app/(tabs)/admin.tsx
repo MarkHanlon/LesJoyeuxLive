@@ -20,6 +20,13 @@ const DRINK_ICONS: Record<string, string> = {
   oj: '🍊', lemonade: '🍋', cola: '🥤',
 };
 
+const DRINK_LABELS: Record<string, string> = {
+  pastis: 'Pastis', kir: 'Kir', kir_royale: 'Kir Royale', cremant: 'Crémant',
+  lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
+  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling',
+  oj: 'OJ', lemonade: 'Lemonade', cola: 'Cola',
+};
+
 function NotificationBanner({ userId }: { userId: string }) {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [subscribed, setSubscribed] = useState(false);
@@ -216,7 +223,12 @@ function MemberCard({
           )}
         </View>
 
-        {drinkIcon && !onRemove && <Text style={styles.drinkBadge}>{drinkIcon}</Text>}
+        {drinkIcon && !onRemove && (
+          <View style={styles.drinkBadgeWrap}>
+            <Text style={styles.drinkBadge}>{drinkIcon}</Text>
+            <Text style={styles.drinkBadgeLabel}>{DRINK_LABELS[member.aperitif!] ?? member.aperitif}</Text>
+          </View>
+        )}
 
         {onRemove && (
           <TouchableOpacity
@@ -532,7 +544,9 @@ const styles = StyleSheet.create({
   visitFuture: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 3, lineHeight: 17 },
   visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
   visitNone: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginTop: 3 },
-  drinkBadge: { fontSize: 28, flexShrink: 0 },
+  drinkBadgeWrap: { alignItems: 'center', flexShrink: 0, gap: 2 },
+  drinkBadge: { fontSize: 28 },
+  drinkBadgeLabel: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center' },
   removeBtn: {
     borderWidth: 1.5, borderColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 14,
     borderRadius: 50, minWidth: 78, alignItems: 'center', flexShrink: 0,
