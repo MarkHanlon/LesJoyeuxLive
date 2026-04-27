@@ -4,10 +4,9 @@
   "devCommand": "expo start --web",
   "installCommand": "npm install",
   "framework": null,
-  "rewrites": [
-    {
-      "source": "/((?!api/).*)",
-      "destination": "/"
-    }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "^/api/(.+)$", "dest": "/api/[...path]?...path=$1", "check": true },
+    { "src": "^/(.*)", "dest": "/" }
   ]
 }
