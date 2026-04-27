@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-26 (Vercel function consolidation + routing fixes)
+**Last Updated**: 2026-04-27 (Critical routing fix — all API paths now working)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -99,7 +99,7 @@ _Nothing actively in progress — ready for next feature._
 - [x] **Consolidated to single catch-all** — all API handlers merged into `api/[...path].ts`; helper modules use underscore prefix (`_db.ts`, `push/_send.ts`) to be excluded from function count; result: 14 functions → 1 function
 - [x] **Path routing hardened** — dual-source path parsing: tries `req.url` first (strips `/api/` prefix), falls back to `req.query.path` catch-all parameter (Expo's `moduleResolution: bundler` tsconfig can interfere with the latter)
 - [x] **Login routing fixed** — `POST /api/register` now routes correctly after `req.url`-based parsing
-- [ ] **Family/visit routing** — fix pushed (ebb8277) but not yet deployed to Vercel; `GET /api/family/members` and `GET /api/visit/:id` were returning 404 — awaiting manual `vercel --prod` deploy + test
+- [x] **Multi-segment API routing fixed** — Root cause found: Vercel's auto-generated routing for `api/[...path].ts` used `([^/]+)$` (single segment only); every 2+ segment path (`/api/family/members`, `/api/status/:id`, `/api/visit/:id`) hit a hardcoded 404 rule. Fixed by replacing `rewrites` with explicit `routes` in `vercel.json` using `(.+)` to match all API segments. Deployed 2026-04-27, all endpoints verified.
 
 ### Core Features (not yet started)
 - [ ] Family calendar/scheduling feature
@@ -146,11 +146,7 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-**Immediate**: Deploy routing fix and verify family/visit tabs load correctly.
-```
-vercel --prod
-```
-Then test: Family tab (family members list), My Visit tab (Mark's visit data).
+**Immediate**: ✅ Routing fix deployed and verified — family/visit/status/admin endpoints all working.
 
 **Next up:**
 - Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
