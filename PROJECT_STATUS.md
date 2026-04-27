@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-27 (Critical routing fix — all API paths now working)
+**Last Updated**: 2026-04-27 (Critical routing fix — all API paths now working; lockfile synced)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
