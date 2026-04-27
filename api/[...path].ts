@@ -154,6 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           u.id,
           u.name,
           u.is_admin                        AS "isAdmin",
+          u.avatar                          AS "avatar",
           COALESCE(u.role, 'guest')         AS "role",
           v.arrive_date::text               AS "arriveDate",
           v.arrive_slot                     AS "arriveSlot",
@@ -268,8 +269,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (seg0 === 'status' && seg1 && !seg2) {
       if (method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
       const db = getDb();
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT`;
       const [user] = await db`
-        SELECT id, name, status, is_admin AS "isAdmin"
+        SELECT id, name, status, is_admin AS "isAdmin", avatar
         FROM   users
         WHERE  id = ${seg1}
       `;
@@ -483,6 +485,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await db`TRUNCATE push_subscriptions, visits, users RESTART IDENTITY CASCADE`;
       }
       return res.status(200).json({ ok: true, message: 'Database ready' });
+    }
+
+    // PATCH /api/user/:id — update avatar
+    if (seg0 === 'user' && seg1 && !seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const userId = req.headers['x-user-id'] as string | undefined;
+      if (!userId || userId !== seg1) return res.status(401).json({ error: 'Unauthorized' });
+      const { avatar } = req.body ?? {};
+      if (typeof avatar !== 'string' || !avatar.startsWith('data:image/'))
+        return res.status(400).json({ error: 'Invalid avatar data' });
+      if (avatar.length > 200_000)
+        return res.status(400).json({ error: 'Image too large' });
+      const db = getDb();
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT`;
+      await db`UPDATE users SET avatar = ${avatar} WHERE id = ${seg1}`;
+      return res.status(200).json({ ok: true });
     }
 
     return res.status(404).json({

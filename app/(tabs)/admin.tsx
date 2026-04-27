@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -109,6 +110,7 @@ type FamilyMember = {
   departDate: string | null;
   departSlot: string | null;
   aperitif: string | null;
+  avatar?: string | null;
 };
 
 const ROLE_CONFIG: Record<Role, { label: string; bg: string; border: string; text: string }> = {
@@ -192,9 +194,12 @@ function MemberCard({
     <View style={[styles.card, (onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}>
       {/* Main row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <View style={[styles.avatar, { backgroundColor: avatarColor(member.name) }]}>
-          <Text style={styles.avatarText}>{initials(member.name)}</Text>
-        </View>
+        {member.avatar
+          ? <Image source={{ uri: member.avatar }} style={styles.avatarImg} />
+          : <View style={[styles.avatar, { backgroundColor: avatarColor(member.name) }]}>
+              <Text style={styles.avatarText}>{initials(member.name)}</Text>
+            </View>
+        }
 
         <View style={styles.memberInfo}>
           <View style={styles.memberNameRow}>
@@ -529,6 +534,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#EDD9A3',
   },
   avatar: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  avatarImg: { width: 48, height: 48, borderRadius: 24, flexShrink: 0 },
   avatarText: { fontSize: 17, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
   memberInfo: { flex: 1 },
   memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },

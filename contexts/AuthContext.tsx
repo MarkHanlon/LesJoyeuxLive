@@ -16,6 +16,7 @@ export type User = {
   name: string;
   status: 'pending' | 'approved';
   isAdmin: boolean;
+  avatar?: string | null;
 };
 
 type AuthContextType = {

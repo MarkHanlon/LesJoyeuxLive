@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -35,6 +36,33 @@ type DrinkKey = typeof DRINKS[number]['key'] | 'later';
 
 function drinkByKey(key: string | null) {
   return DRINKS.find(d => d.key === key) ?? null;
+}
+
+function initials(name: string) {
+  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+const AVATAR_PALETTE = ['#C85A2E', '#2D5A3D', '#C8973D', '#7B3F6E', '#3A6B8A', '#8B4513'];
+function avatarColor(name: string) {
+  return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
+}
+
+function resizeToDataUrl(file: File, size = 96): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new (window as any).Image() as { onload: any; onerror: any; src: string; width: number; height: number };
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+      const s = Math.min((img as any).width, (img as any).height);
+      ctx.drawImage(img as any, ((img as any).width - s) / 2, ((img as any).height - s) / 2, s, s, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+    img.src = url;
+  });
 }
 
 const SLOTS: { key: TimeSlot; label: string; hint: string }[] = [
@@ -232,6 +260,34 @@ export default function VisitScreen() {
   const [isChangingDrink, setIsChangingDrink] = useState(false);
   const [pendingDrink, setPendingDrink] = useState<DrinkKey | null>(null);
   const [isSavingDrink, setIsSavingDrink] = useState(false);
+  const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  function pickAvatar() {
+    if (Platform.OS !== 'web' || !user) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      setUploadingAvatar(true);
+      try {
+        const dataUrl = await resizeToDataUrl(file);
+        await fetch(`/api/user/${user.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+          body: JSON.stringify({ avatar: dataUrl }),
+        });
+        setAvatarUri(dataUrl);
+      } catch {
+        // silently ignore
+      } finally {
+        setUploadingAvatar(false);
+      }
+    };
+    input.click();
+  }
 
   const fetchVisit = useCallback(async () => {
     if (!user) return;
@@ -347,6 +403,17 @@ export default function VisitScreen() {
       <View style={styles.header}>
         <Text style={styles.fleur}>⚜</Text>
         <View style={styles.headerRow}>
+          <TouchableOpacity onPress={pickAvatar} activeOpacity={0.75} style={styles.avatarBtn} disabled={uploadingAvatar}>
+            {avatarUri
+              ? <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
+              : <View style={[styles.avatarCircle, { backgroundColor: user ? avatarColor(user.name) : '#C8973D' }]}>
+                  {uploadingAvatar
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.avatarInitials}>{user ? initials(user.name) : '?'}</Text>
+                  }
+                </View>
+            }
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headline}>My Visit</Text>
             <Text style={styles.subline}>
@@ -585,6 +652,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
   },
+  avatarBtn: { marginRight: 14, flexShrink: 0 },
+  avatarCircle: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
+  avatarImg: { width: 52, height: 52, borderRadius: 26 },
+  avatarInitials: { fontSize: 18, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#fff' },
   headline: {
     fontSize: 32,
     fontFamily: 'Playfair Display, Georgia, serif',
