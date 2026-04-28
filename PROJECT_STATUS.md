@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-27 (Critical routing fix — all API paths now working; lockfile synced)
+**Last Updated**: 2026-04-28 (Personalised photo avatars; aperitif drink label on Family tab)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -85,6 +85,10 @@ _Nothing actively in progress — ready for next feature._
 
 ## 📋 To-Do / Requested by User
 
+### Photo Avatars & Visit UI (2026-04-27)
+- [x] **Personalised photo avatars** — users can upload a profile photo from the Visit tab; image is resized to 256×256 and stored in Neon (`avatar` column on `users` table via `ADD COLUMN IF NOT EXISTS`); displayed as circular avatar in the Family tab member cards and admin screens; `POST /api/user/[id]/avatar` endpoint handles upload + resize via `sharp`
+- [x] **Aperitif drink label on Family tab** — small label (10 px) rendered beneath the drink emoji so the selection is readable without icon recognition alone
+
 ### Family Page
 - [x] **Family tab open to all** — removed admin-only restriction; tab icon updated to 👨‍👩‍👧‍👦
 - [x] **Member cards** — all approved users shown with: avatar, name, admin badge, visit status (here now / arriving date+slot / in N days / no plans), aperitif emoji for specific drink selections
@@ -146,7 +150,7 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-**Immediate**: ✅ Routing fix deployed and verified — family/visit/status/admin endpoints all working.
+**Latest**: ✅ Personalised photo avatars live; aperitif drink names shown on Family tab.
 
 **Next up:**
 - Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
