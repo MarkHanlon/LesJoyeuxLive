@@ -168,6 +168,45 @@ function slotLabel(slot: string) {
   return m[slot] ?? slot;
 }
 
+function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
+  const today = todayStr();
+  const hereTonight = members.filter(
+    m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate
+  );
+  if (hereTonight.length === 0) return null;
+
+  const counts: Record<string, number> = {};
+  for (const m of hereTonight) {
+    const key = m.aperitif ?? '__undecided__';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
+
+  return (
+    <View style={styles.summaryCard}>
+      <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+      <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
+      <View style={styles.summaryCardRows}>
+        {rows.map(([key, count]) => {
+          const isUndecided = key === '__undecided__';
+          const icon = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
+          const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
+          return (
+            <View key={key} style={styles.summaryCardRow}>
+              <Text style={styles.summaryCardIcon}>{icon}</Text>
+              <Text style={styles.summaryCardLabel}>{label}</Text>
+              <View style={styles.summaryCardBadge}>
+                <Text style={styles.summaryCardBadgeText}>×{count}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function MemberCard({
   member,
   onRemove,
@@ -431,6 +470,12 @@ export default function FamilyScreen() {
             <RefreshControl refreshing={isRefreshing} onRefresh={() => fetchAll(true)} tintColor="#C85A2E" />
           }
         >
+          {(() => {
+            const currentMember = members.find(m => m.id === user?.id);
+            const canSeeSummary = currentMember?.role === 'staff' || currentMember?.role === 'admin' || user?.isAdmin;
+            return canSeeSummary ? <TonightSummaryCard members={members} /> : null;
+          })()}
+
           {user?.isAdmin && pending.length > 0 && (
             <>
               <View style={styles.sectionDivider}>
@@ -550,6 +595,23 @@ const styles = StyleSheet.create({
   visitFuture: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 3, lineHeight: 17 },
   visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
   visitNone: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginTop: 3 },
+  summaryCard: {
+    marginHorizontal: 16, marginTop: 16, marginBottom: 4,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#EDD9A3',
+    padding: 16, gap: 2,
+  },
+  summaryCardTitle: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#1A1209' },
+  summaryCardSub: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginBottom: 10 },
+  summaryCardRows: { gap: 6 },
+  summaryCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  summaryCardIcon: { fontSize: 22, width: 28, textAlign: 'center' },
+  summaryCardLabel: { flex: 1, fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#1A1209' },
+  summaryCardBadge: {
+    backgroundColor: '#2D5A3D', borderRadius: 12,
+    paddingHorizontal: 10, paddingVertical: 3,
+  },
+  summaryCardBadgeText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF' },
   drinkBadgeWrap: { alignItems: 'center', flexShrink: 0, gap: 2 },
   drinkBadge: { fontSize: 28 },
   drinkBadgeLabel: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center' },
