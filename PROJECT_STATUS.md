@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-28 (Family news feed on home screen; compact visit CTA)
+**Last Updated**: 2026-04-28 (Family news feed; compact visit CTA; 10 test users seeded)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -84,6 +84,9 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 📋 To-Do / Requested by User
+
+### Test Data (2026-04-28)
+- [x] **10 test users seeded to live DB** — Pappy, Joan, Emma, Simon, Izzy, Sam, Hayley, Jack, Beth, Max; all approved; visits set across early August 2026 (overlapping, 1–2 weeks each); aperitifs assigned; all use PIN `1234`; script at `scripts/seed-test-users.mjs`
 
 ### Home Screen News Feed (2026-04-28)
 - [x] **Family news card** — new middle box on home screen showing: current visitors, next arrival, imminent departures, drink choices for upcoming guests, recent visit plan changes; auto-scrolls one item every 3.2 s, loops back; card is scrollable by touch too
