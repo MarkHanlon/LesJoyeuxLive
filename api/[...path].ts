@@ -163,7 +163,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           COALESCE(
             CASE WHEN v.tonight_date = CURRENT_DATE THEN v.tonight_aperitif ELSE NULL END,
             v.aperitif
-          )                                 AS "aperitif"
+          )                                 AS "aperitif",
+          v.updated_at                      AS "visitUpdatedAt"
         FROM  users u
         LEFT  JOIN visits v ON v.user_id = u.id
         WHERE u.status = 'approved'
