@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-28 (Personalised photo avatars; aperitif drink label on Family tab)
+**Last Updated**: 2026-04-28 (Family news feed on home screen; compact visit CTA)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -85,6 +85,11 @@ _Nothing actively in progress — ready for next feature._
 
 ## 📋 To-Do / Requested by User
 
+### Home Screen News Feed (2026-04-28)
+- [x] **Family news card** — new middle box on home screen showing: current visitors, next arrival, imminent departures, drink choices for upcoming guests, recent visit plan changes; auto-scrolls one item every 3.2 s, loops back; card is scrollable by touch too
+- [x] **Compact visit CTA** — old tall "Next Visit In" box replaced with a compact single-row card (countdown number inline with date, or Bienvenue/Plan prompt); entire home screen now fits without scrolling
+- [x] **API: visitUpdatedAt** — `GET /api/family/members` now returns `visitUpdatedAt` (visits.updated_at) so recent plan changes can surface in the news feed
+
 ### Photo Avatars & Visit UI (2026-04-27)
 - [x] **Personalised photo avatars** — users can upload a profile photo from the Visit tab; image is resized to 256×256 and stored in Neon (`avatar` column on `users` table via `ADD COLUMN IF NOT EXISTS`); displayed as circular avatar in the Family tab member cards and admin screens; `POST /api/user/[id]/avatar` endpoint handles upload + resize via `sharp`
 - [x] **Aperitif drink label on Family tab** — small label (10 px) rendered beneath the drink emoji so the selection is readable without icon recognition alone
@@ -150,7 +155,7 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-**Latest**: ✅ Personalised photo avatars live; aperitif drink names shown on Family tab.
+**Latest**: ✅ Family news feed live on home screen — auto-scrolling middle card with arrivals, departures, drink choices; compact visit status at bottom.
 
 **Next up:**
 - Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
