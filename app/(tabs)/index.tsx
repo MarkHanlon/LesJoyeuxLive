@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 
 const PHOTOS = [
@@ -210,7 +210,7 @@ export default function HomeScreen() {
   const newsScrollRef = useRef<ScrollView>(null);
   const newsScrollYRef = useRef(0);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!user) return;
     fetch(`/api/visit/${user.id}`)
       .then(r => r.ok ? r.json() : null)
@@ -222,15 +222,11 @@ export default function HomeScreen() {
         } : null);
       })
       .catch(() => setVisit(null));
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
     fetch('/api/family/members', { headers: { 'x-user-id': user.id } })
       .then(r => r.ok ? r.json() : [])
       .then(setMembers)
       .catch(() => {});
-  }, [user]);
+  }, [user]));
 
   // Auto-advance photo ticker
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
 
 type TimeSlot = 'morning' | 'lunchtime' | 'afternoon' | 'dinnertime' | 'evening';
@@ -313,7 +314,7 @@ export default function VisitScreen() {
     }
   }, [user]);
 
-  useEffect(() => { fetchVisit(); }, [fetchVisit]);
+  useFocusEffect(fetchVisit);
 
   function updateForm(partial: Partial<VisitPlan>) {
     setForm(prev => {
