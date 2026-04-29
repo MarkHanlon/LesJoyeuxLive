@@ -209,12 +209,14 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
 
 function MemberCard({
   member,
+  managing,
   onRemove,
   removing,
   onRoleChange,
   changingRole,
 }: {
   member: FamilyMember;
+  managing?: boolean;
   onRemove?: () => void;
   removing?: boolean;
   onRoleChange?: (role: Role) => void;
@@ -230,7 +232,7 @@ function MemberCard({
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
 
   return (
-    <View style={[styles.card, (onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}>
+    <View style={[styles.card, (managing && onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}>
       {/* Main row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
         {member.avatar
@@ -243,9 +245,11 @@ function MemberCard({
         <View style={styles.memberInfo}>
           <View style={styles.memberNameRow}>
             <Text style={styles.memberName}>{member.name}</Text>
-            <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border }]}>
-              <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
-            </View>
+            {managing && (
+              <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border }]}>
+                <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
+              </View>
+            )}
           </View>
 
           {isHere ? (
@@ -267,14 +271,14 @@ function MemberCard({
           )}
         </View>
 
-        {drinkIcon && !onRemove && (
+        {drinkIcon && !managing && (
           <View style={styles.drinkBadgeWrap}>
             <Text style={styles.drinkBadge}>{drinkIcon}</Text>
             <Text style={styles.drinkBadgeLabel}>{DRINK_LABELS[member.aperitif!] ?? member.aperitif}</Text>
           </View>
         )}
 
-        {onRemove && (
+        {managing && onRemove && (
           <TouchableOpacity
             style={[styles.removeBtn, removing && styles.removeBtnBusy]}
             onPress={onRemove}
@@ -289,8 +293,8 @@ function MemberCard({
         )}
       </View>
 
-      {/* Role selector — admin-only */}
-      {onRoleChange && (
+      {/* Role selector — admin-only, manage mode only */}
+      {managing && onRoleChange && (
         <View style={styles.roleRow}>
           {(['guest', 'staff', 'admin'] as Role[]).map(r => {
             const rc = ROLE_CONFIG[r];
@@ -330,6 +334,7 @@ export default function FamilyScreen() {
   const [rejectingIds, setRejectingIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [changingRoleIds, setChangingRoleIds] = useState<Set<string>>(new Set());
+  const [managing, setManaging] = useState(false);
 
   const fetchAll = useCallback(async (showRefresh = false) => {
     if (!user) return;
@@ -446,8 +451,23 @@ export default function FamilyScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.fleur}>⚜</Text>
-        <Text style={styles.headline}>La Famille</Text>
-        <Text style={styles.subline}>Everyone who's part of Les Joyeux</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headline}>La Famille</Text>
+            <Text style={styles.subline}>Everyone who's part of Les Joyeux</Text>
+          </View>
+          {user?.isAdmin && (
+            <TouchableOpacity
+              onPress={() => setManaging(v => !v)}
+              style={[styles.manageBtn, managing && styles.manageBtnActive]}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.manageBtnText, managing && styles.manageBtnTextActive]}>
+                {managing ? 'Done' : 'Manage'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {user?.isAdmin && <NotificationBanner userId={user.id} />}
@@ -537,9 +557,10 @@ export default function FamilyScreen() {
               <MemberCard
                 key={m.id}
                 member={m}
-                onRemove={(user?.isAdmin && !m.isAdmin) ? () => confirmRemove(m) : undefined}
+                managing={managing}
+                onRemove={(managing && user?.isAdmin && !m.isAdmin) ? () => confirmRemove(m) : undefined}
                 removing={removingIds.has(m.id)}
-                onRoleChange={(user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
+                onRoleChange={(managing && user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
                 changingRole={changingRoleIds.has(m.id)}
               />
             ))
@@ -561,6 +582,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.5, borderBottomColor: '#EDD9A3',
   },
   fleur: { fontSize: 18, color: '#C8973D', marginBottom: 8 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
+  manageBtn: {
+    borderWidth: 1.5, borderColor: '#C8973D', borderRadius: 50,
+    paddingVertical: 7, paddingHorizontal: 16, marginBottom: 4,
+  },
+  manageBtnActive: { backgroundColor: '#2D5A3D', borderColor: '#2D5A3D' },
+  manageBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C8973D', letterSpacing: 0.3 },
+  manageBtnTextActive: { color: '#F5EDD6' },
   headline: {
     fontSize: 32, fontFamily: 'Playfair Display, Georgia, serif',
     fontStyle: 'italic', color: '#1A1209', lineHeight: 40,
