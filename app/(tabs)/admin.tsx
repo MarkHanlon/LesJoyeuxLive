@@ -504,8 +504,7 @@ export default function FamilyScreen() {
                 <View style={styles.sectionDividerLine} />
               </View>
 
-              {pending.map(person => (
-                <View key={person.id} style={styles.card}>
+              {pending.map(person => (                <View key={person.id} style={styles.card}>
                   <View style={[styles.avatar, { backgroundColor: avatarColor(person.name) }]}>
                     <Text style={styles.avatarText}>{initials(person.name)}</Text>
                   </View>
@@ -538,11 +537,6 @@ export default function FamilyScreen() {
                 </View>
               ))}
 
-              <View style={styles.sectionDivider}>
-                <View style={styles.sectionDividerLine} />
-                <Text style={styles.sectionDividerLabel}>Family members</Text>
-                <View style={styles.sectionDividerLine} />
-              </View>
             </>
           )}
 
@@ -552,8 +546,14 @@ export default function FamilyScreen() {
               <Text style={styles.emptyTitle}>Just you so far</Text>
               <Text style={styles.emptyBody}>Share the link with family to get them on board.</Text>
             </View>
-          ) : (
-            members.map(m => (
+          ) : (() => {
+            const today = todayStr();
+            const hereNow      = members.filter(m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate);
+            const arrivingSoon = members.filter(m => m.arriveDate && today < m.arriveDate).sort((a, b) => a.arriveDate!.localeCompare(b.arriveDate!));
+            const alreadyLeft  = members.filter(m => m.departDate && today > m.departDate).sort((a, b) => b.departDate!.localeCompare(a.departDate!));
+            const noPlans      = members.filter(m => !m.arriveDate).sort((a, b) => a.name.localeCompare(b.name));
+
+            const renderCard = (m: FamilyMember) => (
               <MemberCard
                 key={m.id}
                 member={m}
@@ -563,8 +563,28 @@ export default function FamilyScreen() {
                 onRoleChange={(managing && user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
                 changingRole={changingRoleIds.has(m.id)}
               />
-            ))
-          )}
+            );
+
+            const renderSection = (label: string, group: FamilyMember[]) => group.length === 0 ? null : (
+              <>
+                <View style={styles.sectionDivider}>
+                  <View style={styles.sectionDividerLine} />
+                  <Text style={styles.sectionDividerLabel}>{label}</Text>
+                  <View style={styles.sectionDividerLine} />
+                </View>
+                {group.map(renderCard)}
+              </>
+            );
+
+            return (
+              <>
+                {renderSection('Here now 🏠', hereNow)}
+                {renderSection('Arriving soon', arrivingSoon)}
+                {renderSection('Already left', alreadyLeft)}
+                {renderSection('No plans yet', noPlans)}
+              </>
+            );
+          })()}
 
           {user?.isAdmin && pending.length === 0 && members.length > 0 && (
             <Text style={styles.allClear}>All caught up — no one waiting 🌿</Text>
