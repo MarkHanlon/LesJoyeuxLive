@@ -226,7 +226,6 @@ function MemberCard({
   const hasVisit = !!(member.arriveDate && member.departDate);
   const isHere   = hasVisit && today >= member.arriveDate! && today <= member.departDate!;
   const isFuture = hasVisit && today < member.arriveDate!;
-  const days     = isFuture ? daysUntil(member.arriveDate!) : null;
   const drinkIcon = member.aperitif ? (DRINK_ICONS[member.aperitif] ?? null) : null;
 
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
@@ -258,9 +257,6 @@ function MemberCard({
             <>
               <Text style={styles.visitFuture}>
                 Arriving {formatDate(member.arriveDate!)}, {slotLabel(member.arriveSlot!)}
-                {days !== null && days <= 14
-                  ? `  ·  ${days === 0 ? 'today!' : days === 1 ? 'tomorrow!' : `in ${days} days`}`
-                  : ''}
               </Text>
               <Text style={styles.visitLeaving}>
                 Leaving {formatDate(member.departDate!)}, {slotLabel(member.departSlot!)}
