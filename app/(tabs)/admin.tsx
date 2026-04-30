@@ -1,6 +1,9 @@
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -11,6 +14,19 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 
+const DRINK_ICONS: Record<string, string> = {
+  pastis: '🌿', kir: '💜', kir_royale: '🥂', cremant: '🍾',
+  lillet: '🍸', suze: '🌼', red_wine: '🍷', white_wine: '🫗',
+  rose: '🌸', gt: '🧊', beer: '🍺', sparkling: '💧',
+  oj: '🍊', lemonade: '🍋', cola: '🥤',
+};
+
+const DRINK_LABELS: Record<string, string> = {
+  pastis: 'Pastis', kir: 'Kir', kir_royale: 'Kir Royale', cremant: 'Crémant',
+  lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
+  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling',
+  oj: 'OJ', lemonade: 'Lemonade', cola: 'Cola',
+};
 
 function NotificationBanner({ userId }: { userId: string }) {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
@@ -23,33 +39,25 @@ function NotificationBanner({ userId }: { userId: string }) {
     if (typeof Notification === 'undefined') return;
     setPermission(Notification.permission);
     if (Notification.permission === 'granted') {
-      navigator.serviceWorker?.ready.then((reg) =>
-        reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub))
+      navigator.serviceWorker?.ready.then(reg =>
+        reg.pushManager.getSubscription().then(sub => setSubscribed(!!sub))
       );
     }
   }, []);
 
-  if (Platform.OS !== 'web' || permission === null) return null;
-  if (subscribed) return null;
+  if (Platform.OS !== 'web' || permission === null || subscribed) return null;
 
   async function enable() {
-    setBusy(true);
-    setError(null);
+    setBusy(true); setError(null);
     try {
       const result = await Notification.requestPermission();
       setPermission(result);
       if (result !== 'granted') return;
-
       const res = await fetch('/api/push/vapid-key');
       if (!res.ok) throw new Error('Push not configured on server');
       const { publicKey } = await res.json();
-
       const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: publicKey,
-      });
-
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey });
       const saveRes = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,9 +76,7 @@ function NotificationBanner({ userId }: { userId: string }) {
     return (
       <View style={bannerStyles.banner}>
         <Text style={bannerStyles.icon}>🔕</Text>
-        <Text style={bannerStyles.text}>
-          Notifications blocked — enable them in browser settings to get alerts.
-        </Text>
+        <Text style={bannerStyles.text}>Notifications blocked — enable in browser settings.</Text>
       </View>
     );
   }
@@ -84,29 +90,68 @@ function NotificationBanner({ userId }: { userId: string }) {
       </View>
       <TouchableOpacity
         style={[bannerStyles.btn, busy && bannerStyles.btnBusy]}
-        onPress={enable}
-        disabled={busy}
-        activeOpacity={0.8}
+        onPress={enable} disabled={busy} activeOpacity={0.8}
       >
-        {busy ? (
-          <ActivityIndicator color="#F5EDD6" size="small" />
-        ) : (
-          <Text style={bannerStyles.btnText}>Enable</Text>
-        )}
+        {busy ? <ActivityIndicator color="#F5EDD6" size="small" /> : <Text style={bannerStyles.btnText}>Enable</Text>}
       </TouchableOpacity>
     </View>
   );
 }
 
+type Role = 'guest' | 'staff' | 'admin';
+
+type FamilyMember = {
+  id: string;
+  name: string;
+  isAdmin: boolean;
+  role: Role;
+  arriveDate: string | null;
+  arriveSlot: string | null;
+  departDate: string | null;
+  departSlot: string | null;
+  aperitif: string | null;
+  avatar?: string | null;
+};
+
+const ROLE_CONFIG: Record<Role, { label: string; bg: string; border: string; text: string }> = {
+  guest: { label: 'Guest',  bg: '#FFF8EE', border: '#C8973D', text: '#8B6245' },
+  staff: { label: 'Staff',  bg: '#EEF4F8', border: '#3A6B8A', text: '#3A6B8A' },
+  admin: { label: 'Admin',  bg: '#EEF6EE', border: '#2D5A3D', text: '#2D5A3D' },
+};
+
 type PendingUser = {
   id: string;
   name: string;
   createdAt: string;
-  status: string;
   isAdmin: boolean;
 };
 
-function timeAgo(dateStr: string): string {
+function initials(name: string) {
+  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+const AVATAR_PALETTE = ['#C85A2E', '#2D5A3D', '#C8973D', '#7B3F6E', '#3A6B8A', '#8B4513'];
+function avatarColor(name: string) {
+  return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short',
+  });
+}
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function daysUntil(dateStr: string) {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  return Math.round((new Date(dateStr + 'T00:00:00').getTime() - now.getTime()) / 86400000);
+}
+
+function timeAgo(dateStr: string) {
   const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins} min ago`;
@@ -115,49 +160,270 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map(w => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+function slotLabel(slot: string) {
+  const m: Record<string, string> = {
+    morning: 'morning', lunchtime: 'lunchtime',
+    afternoon: 'afternoon', dinnertime: 'dinner time', evening: 'evening',
+  };
+  return m[slot] ?? slot;
 }
 
-const AVATAR_PALETTE = ['#C85A2E', '#2D5A3D', '#C8973D', '#7B3F6E', '#3A6B8A', '#8B4513'];
-
-function avatarColor(name: string): string {
-  return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
+function printAperitifs(rows: [string, number][], hereCount: number) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  const today = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const rowsHtml = rows.map(([key, count]) => {
+    const isUndecided = key === '__undecided__';
+    const icon  = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
+    const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
+    return `<tr><td class="icon">${icon}</td><td class="drink">${label}</td><td class="count">\xd7${count}</td></tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Tonight’s Aperitifs — Les Joyeux</title><style>
+@page{size:A4 portrait;margin:3cm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Georgia,'Times New Roman',serif;color:#1A1209;background:#fff}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:18px;margin-bottom:24px}
+.fleur{font-size:28px;color:#C8973D;display:block;margin-bottom:8px}
+h1{font-size:28px;font-style:italic;color:#1A1209;margin-bottom:6px}
+.subtitle{font-family:Arial,sans-serif;font-size:13px;color:#8B6245}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+tr{border-bottom:1px solid #EDD9A3}
+tr:last-child{border-bottom:none}
+td{padding:14px 8px;vertical-align:middle}
+.icon{font-size:28px;width:48px;text-align:center}
+.drink{font-size:20px;font-style:italic}
+.count{font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#2D5A3D;text-align:right;width:60px}
+footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:center;font-family:Arial,sans-serif;font-size:11px;color:#B8956A}
+</style></head><body>
+<header><span class="fleur">✸</span><h1>Tonight’s Aperitifs</h1>
+<p class="subtitle">${hereCount} ${hereCount === 1 ? 'person' : 'people'} here tonight  ·  ${today}</p>
+</header><table>${rowsHtml}</table>
+<footer>Les Joyeux</footer>
+<script>window.focus();window.print();<\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=800,height=600');
+  if (w) { w.document.write(html); w.document.close(); }
 }
 
-export default function AdminScreen() {
+function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
+  const today = todayStr();
+  const hereTonight = members.filter(
+    m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate
+  );
+  if (hereTonight.length === 0) return null;
+
+  const counts: Record<string, number> = {};
+  for (const m of hereTonight) {
+    const key = m.aperitif ?? '__undecided__';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
+
+  return (
+    <View style={styles.summaryCard}>
+      {Platform.OS === 'web' ? (
+        <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
+          <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
+            {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+      )}
+      <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
+      <View style={styles.summaryCardRows}>
+        {rows.map(([key, count]) => {
+          const isUndecided = key === '__undecided__';
+          const icon = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
+          const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
+          return (
+            <View key={key} style={styles.summaryCardRow}>
+              <Text style={styles.summaryCardIcon}>{icon}</Text>
+              <Text style={styles.summaryCardLabel}>{label}</Text>
+              <View style={styles.summaryCardBadge}>
+                <Text style={styles.summaryCardBadgeText}>×{count}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function MemberCard({
+  member,
+  managing,
+  onRemove,
+  removing,
+  onRoleChange,
+  changingRole,
+}: {
+  member: FamilyMember;
+  managing?: boolean;
+  onRemove?: () => void;
+  removing?: boolean;
+  onRoleChange?: (role: Role) => void;
+  changingRole?: boolean;
+}) {
+  const today = todayStr();
+  const hasVisit = !!(member.arriveDate && member.departDate);
+  const isHere   = hasVisit && today >= member.arriveDate! && today <= member.departDate!;
+  const isFuture = hasVisit && today < member.arriveDate!;
+  const drinkIcon = member.aperitif ? (DRINK_ICONS[member.aperitif] ?? null) : null;
+
+  const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
+
+  return (
+    <View style={[styles.card, (managing && onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}>
+      {/* Main row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        {member.avatar
+          ? <Image source={{ uri: member.avatar }} style={styles.avatarImg} />
+          : <View style={[styles.avatar, { backgroundColor: avatarColor(member.name) }]}>
+              <Text style={styles.avatarText}>{initials(member.name)}</Text>
+            </View>
+        }
+
+        <View style={styles.memberInfo}>
+          <View style={styles.memberNameRow}>
+            <Text style={styles.memberName}>{member.name}</Text>
+            {managing && (
+              <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border }]}>
+                <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
+              </View>
+            )}
+          </View>
+
+          {isHere ? (
+            <Text style={styles.visitHere}>● Here until {formatDate(member.departDate!)}</Text>
+          ) : isFuture ? (
+            <>
+              <Text style={styles.visitFuture}>
+                Arriving {formatDate(member.arriveDate!)}, {slotLabel(member.arriveSlot!)}
+              </Text>
+              <Text style={styles.visitLeaving}>
+                Leaving {formatDate(member.departDate!)}, {slotLabel(member.departSlot!)}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.visitNone}>No upcoming visit</Text>
+          )}
+        </View>
+
+        {drinkIcon && !managing && (
+          <View style={styles.drinkBadgeWrap}>
+            <Text style={styles.drinkBadge}>{drinkIcon}</Text>
+            <Text style={styles.drinkBadgeLabel}>{DRINK_LABELS[member.aperitif!] ?? member.aperitif}</Text>
+          </View>
+        )}
+
+        {managing && onRemove && (
+          <TouchableOpacity
+            style={[styles.removeBtn, removing && styles.removeBtnBusy]}
+            onPress={onRemove}
+            disabled={removing}
+            activeOpacity={0.8}
+          >
+            {removing
+              ? <ActivityIndicator color="#C85A2E" size="small" />
+              : <Text style={styles.removeBtnText}>Remove</Text>
+            }
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Role selector — admin-only, manage mode only */}
+      {managing && onRoleChange && (
+        <View style={styles.roleRow}>
+          {(['guest', 'staff', 'admin'] as Role[]).map(r => {
+            const rc = ROLE_CONFIG[r];
+            const active = member.role === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                style={[
+                  styles.roleChip,
+                  active && { backgroundColor: rc.bg, borderColor: rc.border },
+                  changingRole && { opacity: 0.5 },
+                ]}
+                onPress={() => !active && onRoleChange(r)}
+                disabled={active || changingRole}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.roleChipText, active && { color: rc.text, fontWeight: '700' }]}>
+                  {rc.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+export default function FamilyScreen() {
   const { user } = useAuth();
+  const [members, setMembers] = useState<FamilyMember[]>([]);
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [approvingIds, setApprovingIds] = useState<Set<string>>(new Set());
+  const [rejectingIds, setRejectingIds] = useState<Set<string>>(new Set());
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [changingRoleIds, setChangingRoleIds] = useState<Set<string>>(new Set());
+  const [managing, setManaging] = useState(false);
 
-  const fetchPending = useCallback(
-    async (showRefresh = false) => {
-      if (!user) return;
-      if (showRefresh) setIsRefreshing(true);
-      try {
-        const res = await fetch('/api/admin/users', {
-          headers: { 'x-admin-id': user.id },
-        });
-        if (res.ok) setPending(await res.json());
-      } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+  const fetchAll = useCallback(async (showRefresh = false) => {
+    if (!user) return;
+    if (showRefresh) setIsRefreshing(true);
+    setFetchError(null);
+    try {
+      const requests: Promise<Response>[] = [
+        fetch('/api/family/members', { headers: { 'x-user-id': user.id } }),
+      ];
+      if (user.isAdmin) {
+        requests.push(fetch('/api/admin/users', { headers: { 'x-admin-id': user.id } }));
       }
-    },
-    [user]
-  );
+      const [membersRes, pendingRes] = await Promise.all(requests);
+      if (membersRes.ok) {
+        const data = await membersRes.json();
+        setMembers(Array.isArray(data) ? data : []);
+      } else {
+        setFetchError(`Could not load family members (${membersRes.status})`);
+      }
+      if (pendingRes?.ok) {
+        const data = await pendingRes.json();
+        setPending(Array.isArray(data) ? data : []);
+      }
+    } catch (e: any) {
+      setFetchError(e.message ?? 'Network error');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [user]);
 
-  useEffect(() => {
-    fetchPending();
-  }, [fetchPending]);
+  useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
+
+  async function reject(userId: string) {
+    if (!user) return;
+    setRejectingIds(prev => new Set(prev).add(userId));
+    try {
+      const res = await fetch(`/api/admin/remove/${userId}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-id': user.id },
+      });
+      if (res.ok) setPending(prev => prev.filter(u => u.id !== userId));
+    } finally {
+      setRejectingIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
+    }
+  }
 
   async function approve(userId: string) {
     if (!user) return;
@@ -168,12 +434,59 @@ export default function AdminScreen() {
         headers: { 'x-admin-id': user.id },
       });
       setPending(prev => prev.filter(u => u.id !== userId));
+      const res = await fetch('/api/family/members', { headers: { 'x-user-id': user.id } });
+      if (res.ok) { const d = await res.json(); setMembers(Array.isArray(d) ? d : []); }
     } finally {
-      setApprovingIds(prev => {
-        const next = new Set(prev);
-        next.delete(userId);
-        return next;
+      setApprovingIds(prev => { const n = new Set(prev); n.delete(userId); return n; });
+    }
+  }
+
+  function confirmRemove(member: FamilyMember) {
+    const doRemove = () => remove(member.id);
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove ${member.name} from the platform? This cannot be undone.`)) doRemove();
+    } else {
+      Alert.alert(
+        'Remove member',
+        `Remove ${member.name} from the platform? This cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Remove', style: 'destructive', onPress: doRemove },
+        ]
+      );
+    }
+  }
+
+  async function remove(memberId: string) {
+    if (!user) return;
+    setRemovingIds(prev => new Set(prev).add(memberId));
+    try {
+      const res = await fetch(`/api/admin/remove/${memberId}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-id': user.id },
       });
+      if (res.ok) setMembers(prev => prev.filter(m => m.id !== memberId));
+    } finally {
+      setRemovingIds(prev => { const n = new Set(prev); n.delete(memberId); return n; });
+    }
+  }
+
+  async function changeRole(memberId: string, role: Role) {
+    if (!user) return;
+    setChangingRoleIds(prev => new Set(prev).add(memberId));
+    try {
+      const res = await fetch(`/api/admin/role/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-admin-id': user.id },
+        body: JSON.stringify({ role }),
+      });
+      if (res.ok) {
+        setMembers(prev => prev.map(m =>
+          m.id === memberId ? { ...m, role, isAdmin: role === 'admin' } : m
+        ));
+      }
+    } finally {
+      setChangingRoleIds(prev => { const n = new Set(prev); n.delete(memberId); return n; });
     }
   }
 
@@ -181,64 +494,143 @@ export default function AdminScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.fleur}>⚜</Text>
-        <Text style={styles.headline}>Who's knocking? 🚪</Text>
-        <Text style={styles.subline}>Family members waiting for access</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headline}>La Famille</Text>
+            <Text style={styles.subline}>Everyone who's part of Les Joyeux</Text>
+          </View>
+          {user?.isAdmin && (
+            <TouchableOpacity
+              onPress={() => setManaging(v => !v)}
+              style={[styles.manageBtn, managing && styles.manageBtnActive]}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.manageBtnText, managing && styles.manageBtnTextActive]}>
+                {managing ? 'Done' : 'Manage'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {user && <NotificationBanner userId={user.id} />}
+      {user?.isAdmin && <NotificationBanner userId={user.id} />}
 
       {isLoading ? (
         <View style={styles.centred}>
           <ActivityIndicator color="#C85A2E" size="large" />
         </View>
+      ) : fetchError ? (
+        <View style={styles.centred}>
+          <Text style={styles.errorText}>⚠️ {fetchError}</Text>
+          <TouchableOpacity onPress={() => fetchAll()} style={{ marginTop: 16 }}>
+            <Text style={styles.retryText}>Tap to retry</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={() => fetchPending(true)}
-              tintColor="#C85A2E"
-            />
+            <RefreshControl refreshing={isRefreshing} onRefresh={() => fetchAll(true)} tintColor="#C85A2E" />
           }
         >
-          {pending.length === 0 ? (
+          {(() => {
+            const currentMember = members.find(m => m.id === user?.id);
+            const canSeeSummary = currentMember?.role === 'staff' || currentMember?.role === 'admin' || user?.isAdmin;
+            return canSeeSummary ? <TonightSummaryCard members={members} /> : null;
+          })()}
+
+          {user?.isAdmin && pending.length > 0 && (
+            <>
+              <View style={styles.sectionDivider}>
+                <View style={styles.sectionDividerLine} />
+                <Text style={styles.sectionDividerLabel}>Waiting for access 🚪</Text>
+                <View style={styles.sectionDividerLine} />
+              </View>
+
+              {pending.map(person => (                <View key={person.id} style={styles.card}>
+                  <View style={[styles.avatar, { backgroundColor: avatarColor(person.name) }]}>
+                    <Text style={styles.avatarText}>{initials(person.name)}</Text>
+                  </View>
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{person.name}</Text>
+                    <Text style={styles.visitNone}>Joined {timeAgo(person.createdAt)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.rejectBtn, rejectingIds.has(person.id) && styles.rejectBtnBusy]}
+                    onPress={() => reject(person.id)}
+                    disabled={rejectingIds.has(person.id) || approvingIds.has(person.id)}
+                    activeOpacity={0.8}
+                  >
+                    {rejectingIds.has(person.id)
+                      ? <ActivityIndicator color="#C85A2E" size="small" />
+                      : <Text style={styles.rejectBtnText}>Reject</Text>
+                    }
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.approveBtn, approvingIds.has(person.id) && styles.approveBtnBusy]}
+                    onPress={() => approve(person.id)}
+                    disabled={approvingIds.has(person.id) || rejectingIds.has(person.id)}
+                    activeOpacity={0.8}
+                  >
+                    {approvingIds.has(person.id)
+                      ? <ActivityIndicator color="#F5EDD6" size="small" />
+                      : <Text style={styles.approveBtnText}>Approve ✓</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+            </>
+          )}
+
+          {members.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyEmoji}>🌿</Text>
-              <Text style={styles.emptyTitle}>All quiet</Text>
-              <Text style={styles.emptyBody}>
-                No one waiting to join right now.
-              </Text>
+              <Text style={styles.emptyTitle}>Just you so far</Text>
+              <Text style={styles.emptyBody}>Share the link with family to get them on board.</Text>
             </View>
-          ) : (
-            pending.map(person => (
-              <View key={person.id} style={styles.card}>
-                <View style={[styles.avatar, { backgroundColor: avatarColor(person.name) }]}>
-                  <Text style={styles.avatarText}>{initials(person.name)}</Text>
-                </View>
+          ) : (() => {
+            const today = todayStr();
+            const hereNow      = members.filter(m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate);
+            const arrivingSoon = members.filter(m => m.arriveDate && today < m.arriveDate).sort((a, b) => a.arriveDate!.localeCompare(b.arriveDate!));
+            const alreadyLeft  = members.filter(m => m.departDate && today > m.departDate).sort((a, b) => b.departDate!.localeCompare(a.departDate!));
+            const noPlans      = members.filter(m => !m.arriveDate).sort((a, b) => a.name.localeCompare(b.name));
 
-                <View style={styles.info}>
-                  <Text style={styles.personName}>{person.name}</Text>
-                  <Text style={styles.personTime}>Joined {timeAgo(person.createdAt)}</Text>
-                </View>
+            const renderCard = (m: FamilyMember) => (
+              <MemberCard
+                key={m.id}
+                member={m}
+                managing={managing}
+                onRemove={(managing && user?.isAdmin && !m.isAdmin) ? () => confirmRemove(m) : undefined}
+                removing={removingIds.has(m.id)}
+                onRoleChange={(managing && user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
+                changingRole={changingRoleIds.has(m.id)}
+              />
+            );
 
-                <TouchableOpacity
-                  style={[
-                    styles.approveBtn,
-                    approvingIds.has(person.id) && styles.approveBtnBusy,
-                  ]}
-                  onPress={() => approve(person.id)}
-                  disabled={approvingIds.has(person.id)}
-                  activeOpacity={0.8}
-                >
-                  {approvingIds.has(person.id) ? (
-                    <ActivityIndicator color="#F5EDD6" size="small" />
-                  ) : (
-                    <Text style={styles.approveBtnText}>Approve ✓</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ))
+            const renderSection = (label: string, group: FamilyMember[]) => group.length === 0 ? null : (
+              <>
+                <View style={styles.sectionDivider}>
+                  <View style={styles.sectionDividerLine} />
+                  <Text style={styles.sectionDividerLabel}>{label}</Text>
+                  <View style={styles.sectionDividerLine} />
+                </View>
+                {group.map(renderCard)}
+              </>
+            );
+
+            return (
+              <>
+                {renderSection('Here now 🏠', hereNow)}
+                {renderSection('Arriving soon', arrivingSoon)}
+                {renderSection('Already left', alreadyLeft)}
+                {renderSection('No plans yet', noPlans)}
+              </>
+            );
+          })()}
+
+          {user?.isAdmin && pending.length === 0 && members.length > 0 && (
+            <Text style={styles.allClear}>All caught up — no one waiting 🌿</Text>
           )}
         </ScrollView>
       )}
@@ -247,180 +639,116 @@ export default function AdminScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5EDD6',
-  },
+  container: { flex: 1, backgroundColor: '#F5EDD6' },
   header: {
-    paddingTop: 64,
-    paddingHorizontal: 28,
-    paddingBottom: 20,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#EDD9A3',
+    paddingTop: 64, paddingHorizontal: 28, paddingBottom: 20,
+    borderBottomWidth: 1.5, borderBottomColor: '#EDD9A3',
   },
-  fleur: {
-    fontSize: 18,
-    color: '#C8973D',
-    marginBottom: 8,
+  fleur: { fontSize: 18, color: '#C8973D', marginBottom: 8 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
+  manageBtn: {
+    borderWidth: 1.5, borderColor: '#C8973D', borderRadius: 50,
+    paddingVertical: 7, paddingHorizontal: 16, marginBottom: 4,
   },
+  manageBtnActive: { backgroundColor: '#2D5A3D', borderColor: '#2D5A3D' },
+  manageBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C8973D', letterSpacing: 0.3 },
+  manageBtnTextActive: { color: '#F5EDD6' },
   headline: {
-    fontSize: 32,
-    fontFamily: 'Playfair Display, Georgia, serif',
-    fontStyle: 'italic',
-    color: '#1A1209',
-    lineHeight: 40,
+    fontSize: 32, fontFamily: 'Playfair Display, Georgia, serif',
+    fontStyle: 'italic', color: '#1A1209', lineHeight: 40,
   },
   subline: {
-    fontSize: 14,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#8B6245',
-    marginTop: 4,
-    letterSpacing: 0.3,
+    fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245', marginTop: 4, letterSpacing: 0.3,
   },
-  centred: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  listContent: {
-    padding: 20,
-    paddingBottom: 48,
-    gap: 12,
-  },
+  centred: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listContent: { padding: 20, paddingBottom: 48, gap: 10 },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    shadowColor: '#1A1209',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#EDD9A3',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF',
+    borderRadius: 18, padding: 16, gap: 14,
+    shadowColor: '#1A1209', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
+    borderWidth: 1, borderColor: '#EDD9A3',
   },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    flexShrink: 0,
+  avatar: { width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  avatarImg: { width: 48, height: 48, borderRadius: 24, flexShrink: 0 },
+  avatarText: { fontSize: 17, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+  memberInfo: { flex: 1 },
+  memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  memberName: { fontSize: 16, fontFamily: 'Playfair Display, Georgia, serif', fontWeight: '700', color: '#1A1209' },
+  adminBadge: { backgroundColor: '#EDD9A3', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
+  adminBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245', letterSpacing: 0.5 },
+  roleBadge: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
+  roleBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', letterSpacing: 0.5 },
+  roleRow: { flexDirection: 'row', gap: 8 },
+  roleChip: { flex: 1, paddingVertical: 8, borderRadius: 50, borderWidth: 1.5, borderColor: '#EDD9A3', backgroundColor: '#FAF4E6', alignItems: 'center' },
+  roleChipText: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#B8956A', letterSpacing: 0.3 },
+  visitHere: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#2D5A3D', marginTop: 3 },
+  visitFuture: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 3, lineHeight: 17 },
+  visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
+  visitNone: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginTop: 3 },
+  summaryCard: {
+    marginHorizontal: 16, marginTop: 16, marginBottom: 4,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#EDD9A3',
+    padding: 16, gap: 2,
   },
-  avatarText: {
-    fontSize: 18,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
+  summaryCardTitle: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#1A1209' },
+  summaryCardTitlePrintable: { textDecorationLine: 'underline', textDecorationStyle: 'dotted', textDecorationColor: '#C8973D' },
+  summaryCardPrintHint: { fontSize: 13, color: '#C8973D' },
+  summaryCardSub: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginBottom: 10 },
+  summaryCardRows: { gap: 6 },
+  summaryCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  summaryCardIcon: { fontSize: 22, width: 28, textAlign: 'center' },
+  summaryCardLabel: { flex: 1, fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#1A1209' },
+  summaryCardBadge: {
+    backgroundColor: '#2D5A3D', borderRadius: 12,
+    paddingHorizontal: 10, paddingVertical: 3,
   },
-  info: {
-    flex: 1,
+  summaryCardBadgeText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF' },
+  drinkBadgeWrap: { alignItems: 'center', flexShrink: 0, gap: 2 },
+  drinkBadge: { fontSize: 28 },
+  drinkBadgeLabel: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center' },
+  removeBtn: {
+    borderWidth: 1.5, borderColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 14,
+    borderRadius: 50, minWidth: 78, alignItems: 'center', flexShrink: 0,
   },
-  personName: {
-    fontSize: 17,
-    fontFamily: 'Playfair Display, Georgia, serif',
-    fontWeight: '700',
-    color: '#1A1209',
+  removeBtnBusy: { opacity: 0.5 },
+  removeBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', letterSpacing: 0.3 },
+  rejectBtn: {
+    borderWidth: 1.5, borderColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 50, minWidth: 64, alignItems: 'center', flexShrink: 0,
   },
-  personTime: {
-    fontSize: 12,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#8B6245',
-    marginTop: 3,
-  },
+  rejectBtnBusy: { opacity: 0.5 },
+  rejectBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', letterSpacing: 0.3 },
   approveBtn: {
-    backgroundColor: '#2D5A3D',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 50,
-    marginLeft: 10,
-    minWidth: 96,
-    alignItems: 'center',
-    flexShrink: 0,
+    backgroundColor: '#2D5A3D', paddingVertical: 10, paddingHorizontal: 14,
+    borderRadius: 50, minWidth: 90, alignItems: 'center', flexShrink: 0,
   },
-  approveBtnBusy: {
-    backgroundColor: '#4A7A5A',
-    opacity: 0.8,
-  },
-  approveBtnText: {
-    fontSize: 13,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    fontWeight: '700',
-    color: '#F5EDD6',
-    letterSpacing: 0.3,
-  },
-  empty: {
-    alignItems: 'center',
-    paddingVertical: 70,
-  },
-  emptyEmoji: {
-    fontSize: 52,
-    marginBottom: 18,
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontFamily: 'Playfair Display, Georgia, serif',
-    fontStyle: 'italic',
-    color: '#1A1209',
-    marginBottom: 10,
-  },
-  emptyBody: {
-    fontSize: 15,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#8B6245',
-    textAlign: 'center',
-    lineHeight: 23,
-  },
+  approveBtnBusy: { backgroundColor: '#4A7A5A', opacity: 0.8 },
+  approveBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#F5EDD6', letterSpacing: 0.3 },
+  sectionDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 8 },
+  sectionDividerLine: { flex: 1, height: 1, backgroundColor: '#EDD9A3' },
+  sectionDividerLabel: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C8973D', letterSpacing: 0.5 },
+  empty: { alignItems: 'center', paddingVertical: 60 },
+  emptyEmoji: { fontSize: 48, marginBottom: 16 },
+  emptyTitle: { fontSize: 22, fontFamily: 'Playfair Display, Georgia, serif', fontStyle: 'italic', color: '#1A1209', marginBottom: 8 },
+  emptyBody: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center', lineHeight: 22 },
+  allClear: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', textAlign: 'center', fontStyle: 'italic', marginTop: 6 },
+  errorText: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', textAlign: 'center', paddingHorizontal: 32 },
+  retryText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', textDecorationLine: 'underline' },
 });
 
 const bannerStyles = StyleSheet.create({
   banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF8ED',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EDD9A3',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 10,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF8ED',
+    borderBottomWidth: 1, borderBottomColor: '#EDD9A3', paddingHorizontal: 20, paddingVertical: 12, gap: 10,
   },
-  icon: {
-    fontSize: 20,
-  },
-  body: {
-    flex: 1,
-  },
-  text: {
-    fontSize: 13,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#5C3D1E',
-    lineHeight: 18,
-  },
-  errorText: {
-    fontSize: 11,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#C85A2E',
-    marginTop: 2,
-  },
-  btn: {
-    backgroundColor: '#C85A2E',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 50,
-    minWidth: 72,
-    alignItems: 'center',
-  },
-  btnBusy: {
-    opacity: 0.7,
-  },
-  btnText: {
-    fontSize: 13,
-    fontFamily: 'Raleway, system-ui, sans-serif',
-    fontWeight: '700',
-    color: '#F5EDD6',
-  },
+  icon: { fontSize: 20 },
+  body: { flex: 1 },
+  text: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#5C3D1E', lineHeight: 18 },
+  errorText: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 2 },
+  btn: { backgroundColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 50, minWidth: 72, alignItems: 'center' },
+  btnBusy: { opacity: 0.7 },
+  btnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#F5EDD6' },
 });
