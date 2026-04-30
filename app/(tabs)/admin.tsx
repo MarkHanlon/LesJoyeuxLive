@@ -168,6 +168,45 @@ function slotLabel(slot: string) {
   return m[slot] ?? slot;
 }
 
+function printAperitifs(rows: [string, number][], hereCount: number) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  const today = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const rowsHtml = rows.map(([key, count]) => {
+    const isUndecided = key === '__undecided__';
+    const icon  = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
+    const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
+    return `<tr><td class="icon">${icon}</td><td class="drink">${label}</td><td class="count">\xd7${count}</td></tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Tonight’s Aperitifs — Les Joyeux</title><style>
+@page{size:A4 portrait;margin:3cm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Georgia,'Times New Roman',serif;color:#1A1209;background:#fff}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:18px;margin-bottom:24px}
+.fleur{font-size:28px;color:#C8973D;display:block;margin-bottom:8px}
+h1{font-size:28px;font-style:italic;color:#1A1209;margin-bottom:6px}
+.subtitle{font-family:Arial,sans-serif;font-size:13px;color:#8B6245}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+tr{border-bottom:1px solid #EDD9A3}
+tr:last-child{border-bottom:none}
+td{padding:14px 8px;vertical-align:middle}
+.icon{font-size:28px;width:48px;text-align:center}
+.drink{font-size:20px;font-style:italic}
+.count{font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#2D5A3D;text-align:right;width:60px}
+footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:center;font-family:Arial,sans-serif;font-size:11px;color:#B8956A}
+</style></head><body>
+<header><span class="fleur">✸</span><h1>Tonight’s Aperitifs</h1>
+<p class="subtitle">${hereCount} ${hereCount === 1 ? 'person' : 'people'} here tonight  ·  ${today}</p>
+</header><table>${rowsHtml}</table>
+<footer>Les Joyeux</footer>
+<script>window.focus();window.print();<\/script>
+</body></html>`;
+  const w = window.open('', '_blank', 'width=800,height=600');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   const today = todayStr();
   const hereTonight = members.filter(
@@ -185,7 +224,15 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
 
   return (
     <View style={styles.summaryCard}>
-      <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+      {Platform.OS === 'web' ? (
+        <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
+          <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
+            {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+      )}
       <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
       <View style={styles.summaryCardRows}>
         {rows.map(([key, count]) => {
@@ -647,6 +694,8 @@ const styles = StyleSheet.create({
     padding: 16, gap: 2,
   },
   summaryCardTitle: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#1A1209' },
+  summaryCardTitlePrintable: { textDecorationLine: 'underline', textDecorationStyle: 'dotted', textDecorationColor: '#C8973D' },
+  summaryCardPrintHint: { fontSize: 13, color: '#C8973D' },
   summaryCardSub: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginBottom: 10 },
   summaryCardRows: { gap: 6 },
   summaryCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
