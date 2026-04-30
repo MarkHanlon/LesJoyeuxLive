@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-28 (Family news feed; compact visit CTA; 10 test users seeded)
+**Last Updated**: 2026-04-30 (Family tab grouping, Tonight's Aperitifs card, Manage toggle, focus-refresh)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -85,6 +85,13 @@ _Nothing actively in progress — ready for next feature._
 
 ## 📋 To-Do / Requested by User
 
+### Family Tab Improvements (2026-04-30)
+- [x] **Tonight's Aperitifs card** — summary card at the top of the Family tab showing everyone's drink choice for tonight; only visible when at least one person is visiting or arriving today
+- [x] **Manage toggle** — admin-only "Manage" button in the Family tab header switches between the normal member view and the admin management view (approvals + remove); simplifies the default view for admins
+- [x] **Member grouping** — Family tab members now grouped into four sections: "Here now", "Arriving soon", "Already left", "No plans"; each section has a header label
+- [x] **Removed arrival countdown text** — removed the verbose "arriving in N days" text from member cards in favour of the cleaner section grouping
+- [x] **Focus-refresh** — all three tabs (Home, Family, Visit) now re-fetch their data on tab focus via `useFocusEffect`; ensures data stays in sync when switching tabs after making changes
+
 ### Test Data (2026-04-28)
 - [x] **10 test users seeded to live DB** — Pappy, Joan, Emma, Simon, Izzy, Sam, Hayley, Jack, Beth, Max; all approved; visits set across early August 2026 (overlapping, 1–2 weeks each); aperitifs assigned; all use PIN `1234`; script at `scripts/seed-test-users.mjs`
 
@@ -158,7 +165,7 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-**Latest**: ✅ Family news feed live on home screen — auto-scrolling middle card with arrivals, departures, drink choices; compact visit status at bottom.
+**Latest**: ✅ Family tab grouped by visit status; Tonight's Aperitifs card; Manage toggle for admins; all tabs refresh on focus.
 
 **Next up:**
 - Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
