@@ -437,6 +437,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const db = getDb();
         const [caller] = await db`SELECT id FROM users WHERE id = ${userId} AND status = 'approved'`;
         if (!caller) return res.status(403).json({ error: 'Forbidden' });
+        await db`
+          CREATE TABLE IF NOT EXISTS events (
+            id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            event_date DATE        NOT NULL,
+            title      TEXT        NOT NULL,
+            event_time TEXT,
+            created_by UUID        REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `;
         const { from, to } = req.query as { from?: string; to?: string };
         if (!from || !to) return res.status(400).json({ error: 'from and to required' });
         const rows = await db`
