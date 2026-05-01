@@ -226,11 +226,15 @@ td{padding:14px 8px;vertical-align:middle}
 .drink{font-size:20px;font-style:italic}
 .count{font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#2D5A3D;text-align:right;width:60px}
 footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:center;font-family:Arial,sans-serif;font-size:11px;color:#B8956A}
+.close-btn{display:block;margin:24px auto 0;padding:10px 28px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.3px}
+.close-btn:hover{background:#3d7a54}
+@media print{.close-btn{display:none}}
 </style></head><body>
 <header><span class="fleur">✸</span><h1>Tonight's Aperitifs</h1>
 <p class="subtitle">${hereCount} ${hereCount === 1 ? 'person' : 'people'} here tonight  ·  ${today}</p>
 </header><table>${rowsHtml}</table>
 <footer>Les Joyeux</footer>
+<button class="close-btn" onclick="window.close()">Close</button>
 <script>window.focus();window.print();<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=800,height=600');
