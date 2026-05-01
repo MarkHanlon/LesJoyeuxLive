@@ -428,6 +428,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // GET /api/events  — list events in a date range (any approved user)
+    // POST /api/events — create an event (admin only)
+    if (seg0 === 'events' && !seg1) {
+      if (method === 'GET') {
+        const userId = req.headers['x-user-id'] as string | undefined;
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+        const db = getDb();
+        const [caller] = await db`SELECT id FROM users WHERE id = ${userId} AND status = 'approved'`;
+        if (!caller) return res.status(403).json({ error: 'Forbidden' });
+        const { from, to } = req.query as { from?: string; to?: string };
+        if (!from || !to) return res.status(400).json({ error: 'from and to required' });
+        const rows = await db`
+          SELECT id, event_date::text AS "eventDate", title, event_time AS "eventTime", created_at AS "createdAt"
+          FROM events
+          WHERE event_date BETWEEN ${from}::date AND ${to}::date
+          ORDER BY event_date, event_time NULLS LAST, created_at
+        `;
+        return res.json(rows);
+      }
+      if (method === 'POST') {
+        const adminId = req.headers['x-admin-id'] as string | undefined;
+        if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+        const db = getDb();
+        const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
+        if (!admin) return res.status(403).json({ error: 'Forbidden' });
+        const { date, title, time } = req.body ?? {};
+        if (!date || typeof title !== 'string' || !title.trim())
+          return res.status(400).json({ error: 'date and title required' });
+        const [ev] = await db`
+          INSERT INTO events (event_date, title, event_time, created_by)
+          VALUES (${date}::date, ${title.trim()}, ${time ?? null}, ${adminId})
+          RETURNING id, event_date::text AS "eventDate", title, event_time AS "eventTime", created_at AS "createdAt"
+        `;
+        return res.status(201).json(ev);
+      }
+      return res.status(405).end();
+    }
+
+    // DELETE /api/events/:id — delete an event (admin only)
+    if (seg0 === 'events' && seg1 && !seg2) {
+      if (method !== 'DELETE') return res.status(405).end();
+      const adminId = req.headers['x-admin-id'] as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+      const db = getDb();
+      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
+      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      await db`DELETE FROM events WHERE id = ${seg1}`;
+      return res.status(200).json({ ok: true });
+    }
+
     // POST /api/migrate
     if (seg0 === 'migrate' && !seg1) {
       if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -480,6 +530,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           auth       TEXT        NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await db`
+        CREATE TABLE IF NOT EXISTS events (
+          id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+          event_date DATE        NOT NULL,
+          title      TEXT        NOT NULL,
+          event_time TEXT,
+          created_by UUID        REFERENCES users(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
       if (req.query.reset === 'true') {
