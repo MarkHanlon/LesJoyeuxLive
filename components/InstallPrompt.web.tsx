@@ -7,7 +7,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const DISMISSED_KEY = 'pwa-install-dismissed';
-const THEME = '#4A90D9';
+const DISMISS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function isStandalone(): boolean {
   return (
@@ -38,7 +38,8 @@ export default function InstallPrompt() {
       localStorage.removeItem(DISMISSED_KEY);
       return;
     }
-    if (localStorage.getItem(DISMISSED_KEY)) return;
+    const dismissedAt = Number(localStorage.getItem(DISMISSED_KEY));
+    if (dismissedAt > 1000000 && Date.now() - dismissedAt < DISMISS_TTL_MS) return;
 
     const p = detectPlatform();
 
@@ -79,7 +80,7 @@ export default function InstallPrompt() {
       useNativeDriver: true,
     }).start(() => {
       setPlatform(null);
-      localStorage.setItem(DISMISSED_KEY, '1');
+      localStorage.setItem(DISMISSED_KEY, String(Date.now()));
     });
   }
 
