@@ -17,7 +17,7 @@ export default function Root({ children }: PropsWithChildren) {
         {/* PWA standalone mode on iOS */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="JoyeuxLive" />
+        <meta name="apple-mobile-web-app-title" content="LesJoyeuxLive" />
 
         {/* iOS home-screen icon (Safari ignores the manifest icons array) */}
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
