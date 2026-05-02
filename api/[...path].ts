@@ -558,6 +558,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, message: 'Database ready' });
     }
 
+    // GET /api/_cleanup — temporary one-use endpoint, remove after use
+    if (seg0 === '_cleanup' && !seg1) {
+      if (req.query.secret !== '3NNpKOtidq8jsC_aNblcd9PgAhBsa8zO')
+        return res.status(403).json({ error: 'Forbidden' });
+      const db = getDb();
+      const result = await db`
+        DELETE FROM users
+        WHERE name NOT IN ('Mark', 'Natalie')
+        RETURNING name
+      `;
+      return res.json({ deleted: result.map((r: any) => r.name) });
+    }
+
     // PATCH /api/user/:id — update avatar
     if (seg0 === 'user' && seg1 && !seg2) {
       if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
