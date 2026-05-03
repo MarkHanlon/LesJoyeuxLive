@@ -6,7 +6,11 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -27,6 +31,7 @@
   },
   "private": true,
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/web-push": "^3.6.4",
     "@vercel/node": "^5.7.11",
     "sharp": "^0.34.5"

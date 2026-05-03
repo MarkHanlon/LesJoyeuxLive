@@ -43,3 +43,8 @@ yarn-error.*
 /ios
 /android
 .vercel
+
+# Playwright
+tests/playwright-report/
+tests/screenshots/
+test-results/

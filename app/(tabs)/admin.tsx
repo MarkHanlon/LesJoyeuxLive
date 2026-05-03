@@ -726,8 +726,8 @@ export default function FamilyScreen() {
             const isToday = date === today;
             const isPast  = date < today;
             const dayEvents = events.filter(e => e.eventDate === date);
-            const arrivals   = members.filter(m => m.arriveDate === date);
-            const departures = members.filter(m => m.departDate === date);
+            const arrivals   = members.filter(m => m.arriveDate && String(m.arriveDate).slice(0, 10) === date);
+            const departures = members.filter(m => m.departDate && String(m.departDate).slice(0, 10) === date);
             const isAddingHere = addingToDate === date;
 
             return (
