@@ -15,7 +15,9 @@ export default function TabLayout() {
           backgroundColor: '#F5EDD6',
           borderTopColor: '#EDD9A3',
           borderTopWidth: 1.5,
-          paddingBottom: 4,
+          paddingBottom: Platform.OS === 'web'
+            ? ('calc(env(safe-area-inset-bottom, 0px) + 16px)' as unknown as number)
+            : 4,
         },
         tabBarLabelStyle: {
           fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
