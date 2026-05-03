@@ -112,6 +112,7 @@ type FamilyMember = {
   departDate: string | null;
   departSlot: string | null;
   aperitif: string | null;
+  saveDinner?: boolean | null;
   avatar?: string | null;
 };
 
@@ -204,6 +205,117 @@ function addDays(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function currentWeekDates(): string[] {
+  const today = new Date();
+  const day = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+}
+
+function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
+  if (!member.arriveDate || !member.departDate) return 'no';
+  const arrive = String(member.arriveDate).slice(0, 10);
+  const depart = String(member.departDate).slice(0, 10);
+  if (date < arrive || date > depart) return 'no';
+  if (date === arrive && member.arriveSlot === 'evening') {
+    return member.saveDinner ? 'keep' : 'no';
+  }
+  return 'yes';
+}
+
+function printDinnerGrid(members: FamilyMember[]) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  const weekDates = currentWeekDates();
+  const guests = members.filter(m => m.role !== 'staff');
+  const today = todayStr();
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  const headerCells = weekDates.map((date, i) => {
+    const d = new Date(date + 'T12:00:00');
+    const isToday = date === today;
+    return `<th class="day-header${isToday ? ' today' : ''}">${dayNames[i]}<br><span class="day-num">${d.getDate()}</span></th>`;
+  }).join('');
+
+  const bodyRows = guests.map(member => {
+    const cells = weekDates.map(date => {
+      const status = getDinnerStatus(member, date);
+      const isToday = date === today;
+      if (status === 'yes') return `<td class="cell-yes${isToday ? ' today-col' : ''}"></td>`;
+      if (status === 'keep') return `<td class="cell-keep${isToday ? ' today-col' : ''}"><span class="keep-label">K</span></td>`;
+      return `<td class="cell-no${isToday ? ' today-col' : ''}"></td>`;
+    }).join('');
+    return `<tr><td class="name-cell">${member.name}</td>${cells}</tr>`;
+  }).join('');
+
+  const totalCells = weekDates.map(date => {
+    const count = guests.filter(m => getDinnerStatus(m, date) !== 'no').length;
+    const isToday = date === today;
+    return `<td class="total-cell${isToday ? ' today-col' : ''}">${count > 0 ? count : ''}</td>`;
+  }).join('');
+
+  const first = new Date(weekDates[0] + 'T12:00:00');
+  const last  = new Date(weekDates[6] + 'T12:00:00');
+  const weekLabel = `${first.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – ${last.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Dinner This Week — Les Joyeux</title><style>
+@page{size:A4 landscape;margin:2cm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;color:#1A1209;background:#fff}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:14px;margin-bottom:18px}
+.fleur{font-size:24px;color:#C8973D;display:block;margin-bottom:6px}
+h1{font-size:22px;font-style:italic;font-family:Georgia,serif;color:#1A1209;margin-bottom:4px}
+.subtitle{font-size:12px;color:#8B6245}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #EDD9A3;vertical-align:middle;text-align:center}
+.name-cell{text-align:left;padding:7px 10px;font-size:13px;font-weight:600;white-space:nowrap;min-width:90px;max-width:140px}
+.day-header{padding:8px 4px;font-size:12px;font-weight:700;color:#8B6245;background:#FAF6EC;min-width:60px}
+.day-header.today{background:#EEF6EE;color:#2D5A3D}
+.day-num{font-size:14px;font-weight:700;color:#1A1209;display:block}
+.day-header.today .day-num{color:#2D5A3D}
+.cell-yes{background:#2D5A3D;height:36px}
+.cell-keep{background:#C8973D;height:36px}
+.cell-no{background:#FAF4E6;height:36px}
+.today-col{outline:2px solid #2D5A3D;outline-offset:-1px}
+.keep-label{font-weight:700;color:#fff;font-size:14px}
+.total-row td{background:#F0EBE0;font-weight:700;font-size:13px;padding:5px 4px}
+.total-cell{color:#2D5A3D}
+.legend{margin-top:14px;display:flex;gap:18px;justify-content:center;font-size:11px;color:#8B6245}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-swatch{width:14px;height:14px;border-radius:2px;display:inline-block;border:1px solid #ddd}
+footer{margin-top:14px;text-align:center;font-size:10px;color:#B8956A}
+.close-btn{display:block;margin:20px auto 0;padding:9px 24px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer}
+@media print{.close-btn{display:none}}
+</style></head><body>
+<header>
+  <span class="fleur">✸</span>
+  <h1>Dinner This Week</h1>
+  <p class="subtitle">${weekLabel}</p>
+</header>
+<table>
+  <thead><tr><th class="name-cell"></th>${headerCells}</tr></thead>
+  <tbody>${bodyRows}</tbody>
+  <tfoot><tr><td class="name-cell total-row" style="color:#8B6245">Total</td>${totalCells}</tr></tfoot>
+</table>
+<div class="legend">
+  <div class="legend-item"><span class="legend-swatch" style="background:#2D5A3D"></span> Present for dinner</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#C8973D"></span> Keep plate (K)</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#FAF4E6"></span> Not present</div>
+</div>
+<footer>Les Joyeux</footer>
+<button class="close-btn" onclick="window.close()">Close</button>
+<script>window.focus();window.print();<\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=650');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 function printAperitifs(rows: [string, number][], hereCount: number) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   const today = new Date().toLocaleDateString('en-GB', {
@@ -259,38 +371,55 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
     const key = m.aperitif ?? '__undecided__';
     counts[key] = (counts[key] ?? 0) + 1;
   }
-
   const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
 
+  const dinnerCount = members
+    .filter(m => m.role !== 'staff')
+    .filter(m => getDinnerStatus(m, today) !== 'no').length;
+
   return (
-    <View style={styles.summaryCard}>
-      {Platform.OS === 'web' ? (
-        <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
-          <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
-            {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
+    <>
+      {dinnerCount > 0 && (
+        <View style={styles.dinnerRow}>
+          <Text style={styles.dinnerRowText}>
+            {'🍽 '}{dinnerCount} {dinnerCount === 1 ? 'person' : 'people'} for dinner tonight
           </Text>
-        </TouchableOpacity>
-      ) : (
-        <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+          {Platform.OS === 'web' && (
+            <TouchableOpacity onPress={() => printDinnerGrid(members)} activeOpacity={0.7} style={styles.dinnerPrintBtn}>
+              <Text style={styles.dinnerPrintBtnText}>🖨</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
-      <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
-      <View style={styles.summaryCardRows}>
-        {rows.map(([key, count]) => {
-          const isUndecided = key === '__undecided__';
-          const icon = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
-          const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
-          return (
-            <View key={key} style={styles.summaryCardRow}>
-              <Text style={styles.summaryCardIcon}>{icon}</Text>
-              <Text style={styles.summaryCardLabel}>{label}</Text>
-              <View style={styles.summaryCardBadge}>
-                <Text style={styles.summaryCardBadgeText}>×{count}</Text>
+      <View style={[styles.summaryCard, dinnerCount > 0 && { marginTop: 4 }]}>
+        {Platform.OS === 'web' ? (
+          <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
+            <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
+              {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+        )}
+        <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
+        <View style={styles.summaryCardRows}>
+          {rows.map(([key, count]) => {
+            const isUndecided = key === '__undecided__';
+            const icon = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
+            const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
+            return (
+              <View key={key} style={styles.summaryCardRow}>
+                <Text style={styles.summaryCardIcon}>{icon}</Text>
+                <Text style={styles.summaryCardLabel}>{label}</Text>
+                <View style={styles.summaryCardBadge}>
+                  <Text style={styles.summaryCardBadgeText}>×{count}</Text>
+                </View>
               </View>
-            </View>
-          );
-        })}
+            );
+          })}
+        </View>
       </View>
-    </View>
+    </>
   );
 }
 
@@ -1118,6 +1247,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#2D5A3D', alignItems: 'center',
   },
   eventSaveBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#F5EDD6' },
+  dinnerRow: {
+    marginHorizontal: 16, marginTop: 16, marginBottom: 0,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#EDD9A3',
+    paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center',
+  },
+  dinnerRowText: { flex: 1, fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#1A1209' },
+  dinnerPrintBtn: { paddingHorizontal: 6, paddingVertical: 2 },
+  dinnerPrintBtnText: { fontSize: 20 },
 });
 
 const bannerStyles = StyleSheet.create({

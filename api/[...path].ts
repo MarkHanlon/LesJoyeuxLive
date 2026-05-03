@@ -160,6 +160,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           v.arrive_slot                     AS "arriveSlot",
           v.depart_date::text               AS "departDate",
           v.depart_slot                     AS "departSlot",
+          v.save_dinner                     AS "saveDinner",
           COALESCE(
             CASE WHEN v.tonight_date = CURRENT_DATE THEN v.tonight_aperitif ELSE NULL END,
             v.aperitif
