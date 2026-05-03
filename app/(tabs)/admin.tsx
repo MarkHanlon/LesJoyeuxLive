@@ -726,6 +726,8 @@ export default function FamilyScreen() {
             const isToday = date === today;
             const isPast  = date < today;
             const dayEvents = events.filter(e => e.eventDate === date);
+            const arrivals   = members.filter(m => m.arriveDate === date);
+            const departures = members.filter(m => m.departDate === date);
             const isAddingHere = addingToDate === date;
 
             return (
@@ -748,6 +750,24 @@ export default function FamilyScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
+
+                {arrivals.map(m => (
+                  <View key={`arrive-${m.id}`} style={[styles.eventRow, styles.eventRowMovement, isPast && { opacity: 0.55 }]}>
+                    <Text style={styles.eventMovementIcon}>🚗</Text>
+                    <Text style={styles.eventMovementText}>
+                      {m.name} arrives{m.arriveSlot ? ` — ${slotLabel(m.arriveSlot)}` : ''}
+                    </Text>
+                  </View>
+                ))}
+
+                {departures.map(m => (
+                  <View key={`depart-${m.id}`} style={[styles.eventRow, styles.eventRowMovement, isPast && { opacity: 0.55 }]}>
+                    <Text style={styles.eventMovementIcon}>👋</Text>
+                    <Text style={styles.eventMovementText}>
+                      {m.name} leaves{m.departSlot ? ` — ${slotLabel(m.departSlot)}` : ''}
+                    </Text>
+                  </View>
+                ))}
 
                 {dayEvents.map(ev => (
                   <View key={ev.id} style={[styles.eventRow, isPast && { opacity: 0.55 }]}>
@@ -772,7 +792,7 @@ export default function FamilyScreen() {
                   </View>
                 ))}
 
-                {dayEvents.length === 0 && !isAddingHere && (
+                {dayEvents.length === 0 && arrivals.length === 0 && departures.length === 0 && !isAddingHere && (
                   <Text style={[styles.eventNone, isPast && { opacity: 0.45 }]}>Nothing planned</Text>
                 )}
 
@@ -1047,6 +1067,9 @@ const styles = StyleSheet.create({
     fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif',
     color: '#C8B89A', fontStyle: 'italic',
   },
+  eventRowMovement: { backgroundColor: '#FAF6EC' },
+  eventMovementIcon: { fontSize: 16, width: 24, textAlign: 'center' },
+  eventMovementText: { flex: 1, fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', fontStyle: 'italic' },
   eventAddForm: {
     padding: 14, gap: 8,
     borderTopWidth: 1, borderTopColor: '#EDD9A3',
