@@ -704,6 +704,15 @@ export default function FamilyScreen() {
 
   const renderEventsTab = () => {
     const today = todayStr();
+    if (Platform.OS === 'web' && members.length > 0) {
+      console.log('[Events] member dates:', members.map(m => ({
+        name: m.name,
+        arriveDate: m.arriveDate,
+        departDate: m.departDate,
+        arriveType: typeof m.arriveDate,
+        departType: typeof m.departDate,
+      })));
+    }
     return (
       <ScrollView
         contentContainerStyle={styles.listContent}

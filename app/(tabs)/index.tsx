@@ -36,13 +36,21 @@ type NewsItem = {
 };
 
 const DRINK_EMOJI: Record<string, string> = {
-  Pastis: '🌿', Kir: '🍇', 'Kir Royale': '🥂', Crémant: '🍾',
-  Lillet: '🍊', Suze: '🌼', Rosé: '🌸', 'Red Wine': '🍷',
-  'White Wine': '🥃', 'G&T': '🫧', Beer: '🍺', 'Soft Drink': '🥤',
+  pastis: '🌿', kir: '💜', kir_royale: '🥂', cremant: '🍾',
+  lillet: '🍸', suze: '🌼', red_wine: '🍷', white_wine: '🫗',
+  rose: '🌸', gt: '🧊', beer: '🍺', sparkling: '💧',
+  oj: '🍊', lemonade: '🍋', cola: '🥤',
 };
 
-function getDrinkEmoji(drink: string): string {
-  return DRINK_EMOJI[drink] ?? '🍹';
+const DRINK_LABELS: Record<string, string> = {
+  pastis: 'Pastis', kir: 'Kir', kir_royale: 'Kir Royale', cremant: 'Crémant',
+  lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
+  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling Water',
+  oj: 'Orange Juice', lemonade: 'Lemonade', cola: 'Cola',
+};
+
+function getDrinkEmoji(key: string): string {
+  return DRINK_EMOJI[key] ?? '🍹';
 }
 
 function formatDate(dateStr: string): string {
@@ -142,7 +150,7 @@ function buildNewsItems(members: Member[], today: string, currentUserId: string)
       items.push({
         key: `drink-${m.id}`,
         emoji: getDrinkEmoji(m.aperitif!),
-        headline: `${firstName(m.name)} is having a ${m.aperitif}`,
+        headline: `${firstName(m.name)} is having a ${DRINK_LABELS[m.aperitif!] ?? m.aperitif}`,
         sub: here.includes(m) ? "Tonight's choice" : 'Apéro plan',
       });
     });
