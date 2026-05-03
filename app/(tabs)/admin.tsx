@@ -198,6 +198,12 @@ function datesBetween(from: string, to: string): string[] {
   return dates;
 }
 
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function printAperitifs(rows: [string, number][], hereCount: number) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   const today = new Date().toLocaleDateString('en-GB', {
@@ -445,13 +451,17 @@ export default function FamilyScreen() {
         const data = await pendingRes.json();
         setPending(Array.isArray(data) ? data : []);
       }
-      // Fetch events for the current user's stay window
+      // Fetch events — admins see a wider window, non-admins see their stay only
       const myMember = membersData.find(m => m.id === user.id);
-      if (myMember?.arriveDate && myMember?.departDate) {
+      const isAdmin = user.isAdmin;
+      const anchor = myMember?.arriveDate ? String(myMember.arriveDate).slice(0, 10) : todayStr();
+      const fetchFrom = isAdmin ? addDays(anchor, -7) : (myMember?.arriveDate ? String(myMember.arriveDate).slice(0, 10) : null);
+      const fetchTo   = isAdmin ? addDays(anchor, 30) : (myMember?.departDate ? String(myMember.departDate).slice(0, 10) : null);
+      if (fetchFrom && fetchTo) {
         setEventsLoading(true);
         try {
           const evRes = await fetch(
-            `/api/events?from=${myMember.arriveDate}&to=${myMember.departDate}`,
+            `/api/events?from=${fetchFrom}&to=${fetchTo}`,
             { headers: { 'x-user-id': user.id } }
           );
           if (evRes.ok) {
@@ -724,14 +734,21 @@ export default function FamilyScreen() {
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
             <ActivityIndicator color="#C85A2E" />
           </View>
-        ) : !currentMember?.arriveDate ? (
+        ) : (!currentMember?.arriveDate && !user?.isAdmin) ? (
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>📅</Text>
             <Text style={styles.emptyTitle}>No visit planned</Text>
             <Text style={styles.emptyBody}>Set your visit dates on the My Visit tab to see Château events.</Text>
           </View>
-        ) : (
-          datesBetween(currentMember.arriveDate, currentMember.departDate!).map(date => {
+        ) : (() => {
+          const anchor = currentMember?.arriveDate
+            ? String(currentMember.arriveDate).slice(0, 10)
+            : todayStr();
+          const rangeFrom = user?.isAdmin ? addDays(anchor, -7) : anchor;
+          const rangeTo   = user?.isAdmin
+            ? addDays(anchor, 30)
+            : String(currentMember!.departDate!).slice(0, 10);
+          return datesBetween(rangeFrom, rangeTo).map(date => {
             const isToday = date === today;
             const isPast  = date < today;
             const dayEvents = events.filter(e => e.eventDate === date);
@@ -849,8 +866,8 @@ export default function FamilyScreen() {
                 )}
               </View>
             );
-          })
-        )}
+          });
+        })()}
       </ScrollView>
     );
   };
