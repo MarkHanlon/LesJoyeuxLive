@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-04-30 (Family tab grouping, Tonight's Aperitifs card, Manage toggle, focus-refresh)
+**Last Updated**: 2026-05-03 (Events tab, arrivals/departures, print aperitifs, iOS PWA fixes, Playwright)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -85,6 +85,23 @@ _Nothing actively in progress — ready for next feature._
 
 ## 📋 To-Do / Requested by User
 
+### Events Tab & Arrivals/Departures (2026-05-03)
+- [x] **Events tab on La Famille screen** — in-page "People / Events" tab switcher; Events tab shows date-by-date view of the user's stay; admin can add/delete events per day; event time (optional) shown in a badge
+- [x] **Arrivals & departures as event entries** — each family member's arrival (🚗) and departure (👋) automatically derived from the `members` array and shown as read-only rows at the top of each day's section in the Events tab; no database changes required
+- [x] **Defensive date comparison** — `.slice(0, 10)` guard on `arriveDate`/`departDate` comparisons handles ISO timestamp strings returned by the neon driver (`2026-05-10T00:00:00.000Z` → `2026-05-10`)
+- [x] **GET /api/events** — returns events between a date range; auto-creates `events` table on first call; **POST /api/events** and **DELETE /api/events/:id** for admin create/delete
+- [x] **Print aperitifs** — tapping "Tonight's aperitifs" title opens a print popup with a clean A4-formatted drink list; 🖨 hint icon and dotted underline signal it's clickable on web; popup includes a Close button
+- [x] **iOS install prompt fix** — changed permanent dismissal flag to 30-day TTL; `> 1000000` check migrates devices with the old permanent flag; prompt reappears after 30 days or immediately after uninstall
+- [x] **Home screen icon rename** — `apple-mobile-web-app-title` and `app.json` `shortName` updated to `LesJoyeuxLive`
+- [x] **Tab bar label fix** — Safari's ~49px toolbar was cropping tab labels; fixed with `paddingBottom: calc(env(safe-area-inset-bottom, 0px) + 16px)` (TypeScript cast for React Native Web)
+
+### Playwright Testing Infrastructure (2026-05-03)
+- [x] **Playwright installed** — `@playwright/test` added as devDependency
+- [x] **`playwright.config.ts`** — supports `BASE_URL` env var (production) or auto-starts `vercel dev` for local full-stack testing
+- [x] **`tests/e2e/events-tab.spec.ts`** — asserts arrival/departure rows appear; intercepts `/api/family/members` to log raw date format; dedicated test checks dates are `YYYY-MM-DD` not ISO strings
+- [x] **`tests/helpers/auth.ts`** — `loginAs(page, name)` helper for use across test files
+- [ ] **One-time setup to enable closed-loop testing**: run `vercel env pull .env.local` + `npx playwright install chromium` so future sessions can do `npm test` against a live local stack
+
 ### Family Tab Improvements (2026-04-30)
 - [x] **Tonight's Aperitifs card** — summary card at the top of the Family tab showing everyone's drink choice for tonight; only visible when at least one person is visiting or arriving today
 - [x] **Manage toggle** — admin-only "Manage" button in the Family tab header switches between the normal member view and the admin management view (approvals + remove); simplifies the default view for admins
@@ -156,7 +173,8 @@ _Nothing actively in progress — ready for next feature._
 - [ ] Add loading states and error handling
 
 ### Testing & Deployment
-- [ ] Set up testing framework (Jest, React Native Testing Library)
+- [x] Set up Playwright E2E testing framework (`playwright.config.ts`, `tests/e2e/`, `tests/helpers/`)
+- [ ] One-time setup: `vercel env pull .env.local` + `npx playwright install chromium` to enable closed-loop testing
 - [ ] Write unit tests for API routes
 - [ ] Write integration tests for features
 - [ ] Deploy to Vercel
@@ -165,12 +183,13 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-**Latest**: ✅ Family tab grouped by visit status; Tonight's Aperitifs card; Manage toggle for admins; all tabs refresh on focus.
+**Latest**: ✅ Events tab with arrivals/departures; print aperitifs; iOS PWA fixes; Playwright testing infrastructure added.
 
 **Next up:**
+- Run `vercel env pull .env.local` + `npx playwright install chromium` to enable closed-loop E2E testing
+- Verify arrivals/departures show correctly after the `.slice(0, 10)` date fix deploys
 - Replace placeholder photos in `PHOTOS` array (`app/(tabs)/index.tsx`) with real family photo URIs
 - Wire GitHub → Vercel auto-deploy (currently manual `vercel --prod`)
-- Lighthouse PWA audit
 - QR code for family onboarding sharing
 
 ---
