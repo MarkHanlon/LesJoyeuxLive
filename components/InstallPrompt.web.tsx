@@ -145,12 +145,12 @@ export default function InstallPrompt() {
           </Text>
           <View style={styles.steps}>
             <Step n={1} text={'Tap the Share button\u00A0\u{1F4E4} at the bottom of Safari'} />
-            <Step n={2} text="Scroll down and tap \u201CAdd to Home Screen\u201D" />
-            <Step n={3} text="Tap \u201CAdd\u201D to confirm" />
+            <Step n={2} text={'Scroll down and tap \u201CAdd to Home Screen\u201D'} />
+            <Step n={3} text={'Tap \u201CAdd\u201D to confirm'} />
           </View>
           <View style={styles.iosArrow} />
           <Pressable style={styles.dismissBtn} onPress={dismiss}>
-            <Text style={styles.dismissBtnText}>Got it, I\u2019ll do this now</Text>
+            <Text style={styles.dismissBtnText}>{`Got it, I\u2019ll do this now`}</Text>
           </Pressable>
         </>
       )}
