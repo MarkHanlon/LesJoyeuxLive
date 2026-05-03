@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 22,
-    paddingTop: 58,
+    paddingTop: 29,
     paddingBottom: 36,
     gap: 16,
   },
@@ -649,7 +649,7 @@ const styles = StyleSheet.create({
     left: 16,
     fontSize: 10,
     fontFamily: 'Raleway, system-ui, sans-serif',
-    color: '#C8B89A',
+    color: '#B8956A',
     letterSpacing: 0.3,
   },
 

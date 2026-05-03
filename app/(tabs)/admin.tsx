@@ -1067,7 +1067,7 @@ export default function FamilyScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5EDD6' },
   header: {
-    paddingTop: 64, paddingHorizontal: 28, paddingBottom: 20,
+    paddingTop: 32, paddingHorizontal: 28, paddingBottom: 20,
     borderBottomWidth: 1.5, borderBottomColor: '#EDD9A3',
   },
   fleur: { fontSize: 18, color: '#C8973D', marginBottom: 8 },
