@@ -2,6 +2,16 @@
 
 **Last Updated**: 2026-05-03 (Build stamp, THEME build fix, aperitif labels, Events tab debug)
 
+## Version Testing Log
+
+| Build stamp (live site) | Commit | Features tested | Result |
+|---|---|---|---|
+| _(pending — first build with stamp)_ | 5ff1dec | Build stamp, THEME fix, aperitif labels, Events tab date diagnostic | 🕐 Not yet tested |
+
+_How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
+
+---
+
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
 
