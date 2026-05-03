@@ -416,18 +416,15 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {process.env.EXPO_PUBLIC_BUILD_TIME ? (
-          <Text style={styles.buildStamp}>
-            Build: {process.env.EXPO_PUBLIC_BUILD_TIME}
-          </Text>
-        ) : null}
-
       </View>
 
-      {/* Not me */}
+      {/* Not me + build stamp pinned to bottom corners */}
       <TouchableOpacity style={styles.notMe} onPress={logout}>
         <Text style={styles.notMeText}>Not me</Text>
       </TouchableOpacity>
+      {process.env.EXPO_PUBLIC_BUILD_TIME ? (
+        <Text style={styles.buildStamp}>Build: {process.env.EXPO_PUBLIC_BUILD_TIME}</Text>
+      ) : null}
 
     </View>
   );
@@ -647,12 +644,12 @@ const styles = StyleSheet.create({
   },
 
   buildStamp: {
+    position: 'absolute',
+    bottom: 20,
+    left: 16,
     fontSize: 10,
     fontFamily: 'Raleway, system-ui, sans-serif',
     color: '#C8B89A',
-    textAlign: 'center',
-    marginTop: 24,
-    marginBottom: 8,
     letterSpacing: 0.3,
   },
 
