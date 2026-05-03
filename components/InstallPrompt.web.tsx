@@ -6,6 +6,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+const THEME = '#C85A2E';
 const DISMISSED_KEY = 'pwa-install-dismissed';
 const DISMISS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
