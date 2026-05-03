@@ -1,5 +1,5 @@
 {
-  "buildCommand": "expo export -p web",
+  "buildCommand": "EXPO_PUBLIC_BUILD_TIME=\"$(date -u '+%d %b %Y, %H:%M UTC')\" expo export -p web",
   "outputDirectory": "dist",
   "devCommand": "expo start --web",
   "installCommand": "npm install",

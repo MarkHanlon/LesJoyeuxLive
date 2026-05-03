@@ -1,6 +1,6 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-05-03 (Events tab, arrivals/departures, print aperitifs, iOS PWA fixes, Playwright)
+**Last Updated**: 2026-05-03 (Build stamp, THEME build fix, aperitif labels, Events tab debug)
 
 ## Project Overview
 Family organization Progressive Web App using Expo, Expo Router, and Neon Postgres (via `@neondatabase/serverless`) with secure API Routes pattern.
@@ -101,6 +101,9 @@ _Nothing actively in progress — ready for next feature._
 - [x] **`tests/e2e/events-tab.spec.ts`** — asserts arrival/departure rows appear; intercepts `/api/family/members` to log raw date format; dedicated test checks dates are `YYYY-MM-DD` not ISO strings
 - [x] **`tests/helpers/auth.ts`** — `loginAs(page, name)` helper for use across test files
 - [ ] **One-time setup to enable closed-loop testing**: run `vercel env pull .env.local` + `npx playwright install chromium` so future sessions can do `npm test` against a live local stack
+- [x] **Build stamp** — `EXPO_PUBLIC_BUILD_TIME` injected at Vercel build time via `date -u` in `vercel.json` build command; shown at bottom of home screen in 10px muted text; invisible in local dev
+- [x] **Build error fixed** — `THEME` constant was missing in `InstallPrompt.web.tsx`; caused all Vercel deployments since last night to fail with `ReferenceError: THEME is not defined`
+- [x] **Aperitif display names fixed** — home screen news feed was showing raw DB keys (`gt`, `red_wine`) instead of labels; fixed by aligning `DRINK_EMOJI`/`DRINK_LABELS` in `index.tsx` with DB key format from `admin.tsx`
 
 ### Family Tab Improvements (2026-04-30)
 - [x] **Tonight's Aperitifs card** — summary card at the top of the Family tab showing everyone's drink choice for tonight; only visible when at least one person is visiting or arriving today

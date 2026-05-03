@@ -416,6 +416,12 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {process.env.EXPO_PUBLIC_BUILD_TIME ? (
+          <Text style={styles.buildStamp}>
+            Build: {process.env.EXPO_PUBLIC_BUILD_TIME}
+          </Text>
+        ) : null}
+
       </View>
 
       {/* Not me */}
@@ -638,6 +644,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#C85A2E',
     textDecorationLine: 'underline',
+  },
+
+  buildStamp: {
+    fontSize: 10,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#C8B89A',
+    textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 8,
+    letterSpacing: 0.3,
   },
 
   notMe: {
