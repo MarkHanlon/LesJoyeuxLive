@@ -69,34 +69,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }));
 
   try {
-    // GET /api/_debug/users — lists all users (TEMPORARY, remove after debugging)
-    if (seg0 === '_debug' && seg1 === 'users' && !seg2) {
-      const db = getDb();
-      const users = await db`
-        SELECT id, name, status, is_admin AS "isAdmin", role, created_at AS "createdAt"
-        FROM users ORDER BY created_at ASC
-      `;
-      return res.status(200).json({ count: users.length, users });
-    }
-
-    // GET /api/_debug — dumps request internals, useful for diagnosing routing issues
-    if (seg0 === '_debug' && !seg1) {
-      return res.status(200).json({
-        method,
-        rawUrl: req.url,
-        segmentSource,
-        segments,
-        query: req.query,
-        headers: req.headers,
-        env: {
-          DATABASE_URL: !!process.env.DATABASE_URL,
-          VAPID_PUBLIC_KEY: !!process.env.VAPID_PUBLIC_KEY,
-          VAPID_PRIVATE_KEY: !!process.env.VAPID_PRIVATE_KEY,
-          VAPID_SUBJECT: !!process.env.VAPID_SUBJECT,
-        },
-      });
-    }
-
     // POST /api/register
     if (seg0 === 'register' && !seg1) {
       if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -392,6 +364,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST /api/push/test
     if (seg0 === 'push' && seg1 === 'test' && !seg2) {
       if (method !== 'POST') return res.status(405).end();
+      const testAdminId = req.headers['x-admin-id'] as string | undefined;
+      if (!testAdminId) return res.status(401).json({ error: 'Unauthorized' });
+      const testDb = getDb();
+      const [testAdmin] = await testDb`SELECT id FROM users WHERE id = ${testAdminId} AND is_admin = true`;
+      if (!testAdmin) return res.status(403).json({ error: 'Forbidden' });
       const subject = process.env.VAPID_SUBJECT;
       const publicKey = process.env.VAPID_PUBLIC_KEY;
       const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -492,7 +469,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST /api/migrate
     if (seg0 === 'migrate' && !seg1) {
       if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+      const migrateAdminId = req.headers['x-admin-id'] as string | undefined;
+      if (!migrateAdminId) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
+      const [migrateAdmin] = await db`SELECT id FROM users WHERE id = ${migrateAdminId} AND is_admin = true`;
+      if (!migrateAdmin) return res.status(403).json({ error: 'Forbidden' });
       await db`
         CREATE TABLE IF NOT EXISTS users (
           id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

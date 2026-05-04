@@ -25,8 +25,8 @@ const DRINK_ICONS: Record<string, string> = {
 const DRINK_LABELS: Record<string, string> = {
   pastis: 'Pastis', kir: 'Kir', kir_royale: 'Kir Royale', cremant: 'Crémant',
   lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
-  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling',
-  oj: 'OJ', lemonade: 'Lemonade', cola: 'Cola',
+  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling Water',
+  oj: 'Orange Juice', lemonade: 'Lemonade', cola: 'Cola',
 };
 
 function NotificationBanner({ userId }: { userId: string }) {
@@ -843,15 +843,6 @@ export default function FamilyScreen() {
 
   const renderEventsTab = () => {
     const today = todayStr();
-    if (Platform.OS === 'web' && members.length > 0) {
-      console.log('[Events] member dates:', members.map(m => ({
-        name: m.name,
-        arriveDate: m.arriveDate,
-        departDate: m.departDate,
-        arriveType: typeof m.arriveDate,
-        departType: typeof m.departDate,
-      })));
-    }
     return (
       <ScrollView
         contentContainerStyle={styles.listContent}
