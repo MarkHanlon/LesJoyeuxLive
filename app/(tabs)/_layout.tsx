@@ -19,8 +19,8 @@ export default function TabLayout() {
             ? ('calc(env(safe-area-inset-bottom, 0px) + 8px)' as unknown as number)
             : 4,
           height: Platform.OS === 'web'
-            ? ('calc(env(safe-area-inset-bottom, 0px) + 58px)' as unknown as number)
-            : 58,
+            ? ('calc(env(safe-area-inset-bottom, 0px) + 62px)' as unknown as number)
+            : 62,
         },
         tabBarLabelStyle: {
           fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
