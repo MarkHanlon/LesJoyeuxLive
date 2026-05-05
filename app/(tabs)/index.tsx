@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
+import { daysUntil, formatDate, slotLabel, todayStr } from '../../utils/date';
 
 const PHOTOS = [
   { uri: '/cheers.JPG' },
@@ -15,6 +17,7 @@ const PHOTOS = [
 const HOLD_MS = 3000;
 const FADE_MS = 700;
 const NEWS_ITEM_H = 60;
+const NEWS_SCROLL_MS = 3200;
 
 type VisitData = { arriveDate: string; arriveSlot: string; departDate: string } | null;
 
@@ -35,45 +38,8 @@ type NewsItem = {
   sub: string;
 };
 
-const DRINK_EMOJI: Record<string, string> = {
-  pastis: '🌿', kir: '💜', kir_royale: '🥂', cremant: '🍾',
-  lillet: '🍸', suze: '🌼', red_wine: '🍷', white_wine: '🫗',
-  rose: '🌸', gt: '🧊', beer: '🍺', sparkling: '💧',
-  oj: '🍊', lemonade: '🍋', cola: '🥤',
-};
-
-const DRINK_LABELS: Record<string, string> = {
-  pastis: 'Pastis', kir: 'Kir', kir_royale: 'Kir Royale', cremant: 'Crémant',
-  lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
-  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling Water',
-  oj: 'Orange Juice', lemonade: 'Lemonade', cola: 'Cola',
-};
-
 function getDrinkEmoji(key: string): string {
-  return DRINK_EMOJI[key] ?? '🍹';
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
-    weekday: 'short', day: 'numeric', month: 'short',
-  });
-}
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysUntil(dateStr: string): number {
-  const now = new Date(); now.setHours(0, 0, 0, 0);
-  return Math.round((new Date(dateStr + 'T00:00:00').getTime() - now.getTime()) / 86400000);
-}
-
-function slotLabel(slot: string): string {
-  const m: Record<string, string> = {
-    morning: 'morning', lunchtime: 'lunchtime',
-    afternoon: 'afternoon', dinnertime: 'dinner time', evening: 'evening',
-  };
-  return m[slot] ?? slot;
+  return DRINK_ICONS[key] ?? '🍹';
 }
 
 function firstName(name: string): string {
@@ -282,7 +248,7 @@ export default function HomeScreen() {
         newsScrollRef.current?.scrollTo({ y: next, animated: true });
         newsScrollYRef.current = next;
       }
-    }, 3200);
+    }, NEWS_SCROLL_MS);
     return () => clearInterval(id);
   }, [newsItems]);
 

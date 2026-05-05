@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { avatarColor, initials } from '../../utils/ui';
 
 type TimeSlot = 'morning' | 'lunchtime' | 'afternoon' | 'dinnertime' | 'evening';
 
@@ -39,14 +40,6 @@ function drinkByKey(key: string | null) {
   return DRINKS.find(d => d.key === key) ?? null;
 }
 
-function initials(name: string) {
-  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
-}
-
-const AVATAR_PALETTE = ['#C85A2E', '#2D5A3D', '#C8973D', '#7B3F6E', '#3A6B8A', '#8B4513'];
-function avatarColor(name: string) {
-  return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
-}
 
 function resizeToDataUrl(file: File, size = 96): Promise<string> {
   return new Promise((resolve, reject) => {

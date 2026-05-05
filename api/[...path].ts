@@ -23,45 +23,14 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Parse path using all available sources — Vercel can expose different things
-  // depending on how the function is invoked (catch-all vs rewrite vs direct)
-  let segments: string[] = [];
-  let segmentSource = 'none';
-
-  // Source 1: req.url (full request path, e.g. /api/family/members)
   const rawUrl = (req.url ?? '').split('?')[0];
-  if (rawUrl && rawUrl !== '/' && !rawUrl.includes('[...')) {
-    const stripped = rawUrl.replace(/^\/api\//, '').replace(/^\//, '');
-    const fromUrl = stripped.split('/').filter(Boolean);
-    if (fromUrl.length > 0) {
-      segments = fromUrl;
-      segmentSource = 'req.url';
-    }
-  }
-
-  // Source 2: req.query.path from the [...path] catch-all parameter
-  if (segments.length === 0) {
-    const qp = req.query.path;
-    if (Array.isArray(qp) && qp.some(Boolean)) {
-      segments = qp.filter(Boolean);
-      segmentSource = 'req.query.path (array)';
-    } else if (typeof qp === 'string' && qp) {
-      segments = qp.split('/').filter(Boolean);
-      segmentSource = 'req.query.path (string)';
-    }
-  }
-
+  const segments = rawUrl.replace(/^\/api\//, '').replace(/^\//, '').split('/').filter(Boolean);
   const [seg0, seg1, seg2] = segments;
   const method = req.method ?? 'GET';
 
-  // Structured log visible in Vercel Function logs
   console.log(JSON.stringify({
-    _api: true,
-    method,
-    rawUrl: req.url,
-    segmentSource,
-    segments,
-    query: req.query,
+    _api: true, method,
+    path: `/${segments.join('/')}`,
     headers: {
       'x-user-id': req.headers['x-user-id'] ? '(set)' : '(missing)',
       'x-admin-id': req.headers['x-admin-id'] ? '(set)' : '(missing)',
@@ -114,11 +83,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = req.headers['x-user-id'] as string | undefined;
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
-      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'guest'`;
-      await db`UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'guest'`;
       const [caller] = await db`SELECT id FROM users WHERE id = ${userId} AND status = 'approved'`;
       if (!caller) return res.status(403).json({ error: 'Forbidden' });
       const members = await db`
@@ -150,23 +114,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (seg0 === 'visit' && seg1 && !seg2) {
       const id = seg1;
       const db = getDb();
-      await db`
-        CREATE TABLE IF NOT EXISTS visits (
-          id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          arrive_date DATE        NOT NULL,
-          arrive_slot TEXT        NOT NULL,
-          save_lunch  BOOLEAN     NOT NULL DEFAULT false,
-          save_dinner BOOLEAN     NOT NULL DEFAULT false,
-          depart_date DATE        NOT NULL,
-          depart_slot TEXT        NOT NULL,
-          updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE(user_id)
-        )
-      `;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
       if (method === 'GET') {
         const rows = await db`
           SELECT
@@ -218,8 +165,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (typeof aperitif !== 'string' || !aperitif)
         return res.status(400).json({ error: 'aperitif required' });
       const db = getDb();
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
       if (tonight) {
         await db`
           UPDATE visits
@@ -243,7 +188,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (seg0 === 'status' && seg1 && !seg2) {
       if (method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
       const db = getDb();
-      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT`;
       const [user] = await db`
         SELECT id, name, status, is_admin AS "isAdmin", avatar
         FROM   users

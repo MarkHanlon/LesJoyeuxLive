@@ -14,20 +14,12 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
+import { addDays, datesBetween, daysUntil, formatDate, formatDateLong, slotLabel, todayStr } from '../../utils/date';
+import { avatarColor, initials } from '../../utils/ui';
 
-const DRINK_ICONS: Record<string, string> = {
-  pastis: '🌿', kir: '💜', kir_royale: '🥂', cremant: '🍾',
-  lillet: '🍸', suze: '🌼', red_wine: '🍷', white_wine: '🫗',
-  rose: '🌸', gt: '🧊', beer: '🍺', sparkling: '💧',
-  oj: '🍊', lemonade: '🍋', cola: '🥤',
-};
-
-const DRINK_LABELS: Record<string, string> = {
-  pastis: 'Pastis', kir: 'Kir', kir_royale: 'Kir Royale', cremant: 'Crémant',
-  lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
-  rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling Water',
-  oj: 'Orange Juice', lemonade: 'Lemonade', cola: 'Cola',
-};
+const ADMIN_DAYS_BEFORE = 7;
+const ADMIN_DAYS_AFTER = 30;
 
 function NotificationBanner({ userId }: { userId: string }) {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
@@ -137,37 +129,6 @@ type PendingUser = {
   isAdmin: boolean;
 };
 
-function initials(name: string) {
-  return name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
-}
-
-const AVATAR_PALETTE = ['#C85A2E', '#2D5A3D', '#C8973D', '#7B3F6E', '#3A6B8A', '#8B4513'];
-function avatarColor(name: string) {
-  return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
-    weekday: 'short', day: 'numeric', month: 'short',
-  });
-}
-
-function formatDateLong(dateStr: string) {
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  });
-}
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function daysUntil(dateStr: string) {
-  const now = new Date(); now.setHours(0, 0, 0, 0);
-  return Math.round((new Date(dateStr + 'T00:00:00').getTime() - now.getTime()) / 86400000);
-}
-
 function timeAgo(dateStr: string) {
   const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
   if (mins < 1) return 'just now';
@@ -175,34 +136,6 @@ function timeAgo(dateStr: string) {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-function slotLabel(slot: string) {
-  const m: Record<string, string> = {
-    morning: 'morning', lunchtime: 'lunchtime',
-    afternoon: 'afternoon', dinnertime: 'dinner time', evening: 'evening',
-  };
-  return m[slot] ?? slot;
-}
-
-function datesBetween(from: string, to: string): string[] {
-  const dates: string[] = [];
-  const cur = new Date(from + 'T12:00:00');
-  const end = new Date(to + 'T12:00:00');
-  while (cur <= end) {
-    const y = cur.getFullYear();
-    const m = String(cur.getMonth() + 1).padStart(2, '0');
-    const d = String(cur.getDate()).padStart(2, '0');
-    dates.push(`${y}-${m}-${d}`);
-    cur.setDate(cur.getDate() + 1);
-  }
-  return dates;
-}
-
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr + 'T12:00:00');
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function currentWeekDates(): string[] {
@@ -584,8 +517,8 @@ export default function FamilyScreen() {
       const myMember = membersData.find(m => m.id === user.id);
       const isAdmin = user.isAdmin;
       const anchor = myMember?.arriveDate ? String(myMember.arriveDate).slice(0, 10) : todayStr();
-      const fetchFrom = isAdmin ? addDays(anchor, -7) : (myMember?.arriveDate ? String(myMember.arriveDate).slice(0, 10) : null);
-      const fetchTo   = isAdmin ? addDays(anchor, 30) : (myMember?.departDate ? String(myMember.departDate).slice(0, 10) : null);
+      const fetchFrom = isAdmin ? addDays(anchor, -ADMIN_DAYS_BEFORE) : (myMember?.arriveDate ? String(myMember.arriveDate).slice(0, 10) : null);
+      const fetchTo   = isAdmin ? addDays(anchor, ADMIN_DAYS_AFTER) : (myMember?.departDate ? String(myMember.departDate).slice(0, 10) : null);
       if (fetchFrom && fetchTo) {
         setEventsLoading(true);
         try {
@@ -864,9 +797,9 @@ export default function FamilyScreen() {
           const anchor = currentMember?.arriveDate
             ? String(currentMember.arriveDate).slice(0, 10)
             : todayStr();
-          const rangeFrom = user?.isAdmin ? addDays(anchor, -7) : anchor;
+          const rangeFrom = user?.isAdmin ? addDays(anchor, -ADMIN_DAYS_BEFORE) : anchor;
           const rangeTo   = user?.isAdmin
-            ? addDays(anchor, 30)
+            ? addDays(anchor, ADMIN_DAYS_AFTER)
             : String(currentMember!.departDate!).slice(0, 10);
           return datesBetween(rangeFrom, rangeTo).map(date => {
             const isToday = date === today;
