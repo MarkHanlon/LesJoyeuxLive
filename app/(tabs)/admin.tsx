@@ -165,30 +165,26 @@ function printDinnerGrid(members: FamilyMember[]) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   const weekDates = currentWeekDates();
   const guests = members.filter(m => m.role !== 'staff');
-  const today = todayStr();
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   const headerCells = weekDates.map((date, i) => {
     const d = new Date(date + 'T12:00:00');
-    const isToday = date === today;
-    return `<th class="day-header${isToday ? ' today' : ''}">${dayNames[i]}<br><span class="day-num">${d.getDate()}</span></th>`;
+    return `<th class="day-header">${dayNames[i]}<br><span class="day-num">${d.getDate()}</span></th>`;
   }).join('');
 
   const bodyRows = guests.map(member => {
     const cells = weekDates.map(date => {
       const status = getDinnerStatus(member, date);
-      const isToday = date === today;
-      if (status === 'yes') return `<td class="cell-yes${isToday ? ' today-col' : ''}"></td>`;
-      if (status === 'keep') return `<td class="cell-keep${isToday ? ' today-col' : ''}"><span class="keep-label">K</span></td>`;
-      return `<td class="cell-no${isToday ? ' today-col' : ''}"></td>`;
+      if (status === 'yes') return `<td class="cell-yes"></td>`;
+      if (status === 'keep') return `<td class="cell-keep"><span class="keep-label">K</span></td>`;
+      return `<td class="cell-no"></td>`;
     }).join('');
     return `<tr><td class="name-cell">${member.name}</td>${cells}</tr>`;
   }).join('');
 
   const totalCells = weekDates.map(date => {
     const count = guests.filter(m => getDinnerStatus(m, date) !== 'no').length;
-    const isToday = date === today;
-    return `<td class="total-cell${isToday ? ' today-col' : ''}">${count > 0 ? count : ''}</td>`;
+    return `<td class="total-cell">${count > 0 ? count : ''}</td>`;
   }).join('');
 
   const first = new Date(weekDates[0] + 'T12:00:00');
@@ -208,13 +204,10 @@ table{width:100%;border-collapse:collapse}
 th,td{border:1px solid #EDD9A3;vertical-align:middle;text-align:center}
 .name-cell{text-align:left;padding:7px 10px;font-size:13px;font-weight:600;white-space:nowrap;min-width:90px;max-width:140px}
 .day-header{padding:8px 4px;font-size:12px;font-weight:700;color:#8B6245;background:#FAF6EC;min-width:60px}
-.day-header.today{background:#EEF6EE;color:#2D5A3D}
 .day-num{font-size:14px;font-weight:700;color:#1A1209;display:block}
-.day-header.today .day-num{color:#2D5A3D}
 .cell-yes{background:#2D5A3D;height:36px}
 .cell-keep{background:#C8973D;height:36px}
 .cell-no{background:#FAF4E6;height:36px}
-.today-col{outline:2px solid #2D5A3D;outline-offset:-1px}
 .keep-label{font-weight:700;color:#fff;font-size:14px}
 .total-row td{background:#F0EBE0;font-weight:700;font-size:13px;padding:5px 4px}
 .total-cell{color:#2D5A3D}
