@@ -314,8 +314,8 @@ export default function VisitScreen() {
       const next = { ...prev, ...partial };
       if (next.departDate < next.arriveDate) next.departDate = next.arriveDate;
       // clear plate flags when slot changes away from their trigger
-      if (partial.arriveSlot && partial.arriveSlot !== 'lunchtime')  next.saveLunch  = false;
-      if (partial.arriveSlot && partial.arriveSlot !== 'dinnertime') next.saveDinner = false;
+      if (partial.arriveSlot && partial.arriveSlot !== 'lunchtime')                             next.saveLunch  = false;
+      if (partial.arriveSlot && partial.arriveSlot !== 'dinnertime' && partial.arriveSlot !== 'evening') next.saveDinner = false;
       return next;
     });
   }
@@ -553,11 +553,13 @@ export default function VisitScreen() {
                 />
               </View>
             )}
-            {form.arriveSlot === 'dinnertime' && (
+            {(form.arriveSlot === 'dinnertime' || form.arriveSlot === 'evening') && (
               <View style={styles.plateToggleRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.plateToggleLabel}>Save me a dinner plate?</Text>
-                  <Text style={styles.plateToggleHint}>We'll keep one warm for you</Text>
+                  <Text style={styles.plateToggleHint}>
+                    {form.arriveSlot === 'evening' ? 'We\'ll save some food for you' : 'We\'ll keep one warm for you'}
+                  </Text>
                 </View>
                 <Switch
                   value={form.saveDinner}

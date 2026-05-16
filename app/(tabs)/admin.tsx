@@ -160,7 +160,7 @@ function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | '
   if (date < arrive || date > depart) return 'no';
   if (date === depart && BEFORE_DINNER_SLOTS.has(member.departSlot ?? '')) return 'no';
   if (date === arrive) {
-    if (member.arriveSlot === 'evening') return 'no';
+    if (member.arriveSlot === 'evening') return member.saveDinner ? 'keep' : 'no';
     if (member.arriveSlot === 'dinnertime') return member.saveDinner ? 'keep' : 'yes';
   }
   return 'yes';
