@@ -104,6 +104,7 @@ type FamilyMember = {
   departDate: string | null;
   departSlot: string | null;
   aperitif: string | null;
+  saveLunch?: boolean | null;
   saveDinner?: boolean | null;
   avatar?: string | null;
 };
@@ -150,13 +151,30 @@ function currentWeekDates(): string[] {
   });
 }
 
+const BEFORE_DINNER_SLOTS = new Set(['morning', 'lunchtime', 'afternoon']);
+
 function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
   if (!member.arriveDate || !member.departDate) return 'no';
   const arrive = String(member.arriveDate).slice(0, 10);
   const depart = String(member.departDate).slice(0, 10);
   if (date < arrive || date > depart) return 'no';
-  if (date === arrive && member.arriveSlot === 'evening') {
-    return member.saveDinner ? 'keep' : 'no';
+  if (date === depart && BEFORE_DINNER_SLOTS.has(member.departSlot ?? '')) return 'no';
+  if (date === arrive) {
+    if (member.arriveSlot === 'evening') return 'no';
+    if (member.arriveSlot === 'dinnertime') return member.saveDinner ? 'keep' : 'yes';
+  }
+  return 'yes';
+}
+
+function getLunchStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
+  if (!member.arriveDate || !member.departDate) return 'no';
+  const arrive = String(member.arriveDate).slice(0, 10);
+  const depart = String(member.departDate).slice(0, 10);
+  if (date < arrive || date > depart) return 'no';
+  if (date === depart && member.departSlot === 'morning') return 'no';
+  if (date === arrive) {
+    if (member.arriveSlot === 'afternoon' || member.arriveSlot === 'dinnertime' || member.arriveSlot === 'evening') return 'no';
+    if (member.arriveSlot === 'lunchtime') return (member.saveLunch ?? false) ? 'keep' : 'yes';
   }
   return 'yes';
 }
@@ -167,69 +185,89 @@ function printDinnerGrid(members: FamilyMember[]) {
   const guests = members.filter(m => m.role !== 'staff');
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const headerCells = weekDates.map((date, i) => {
-    const d = new Date(date + 'T12:00:00');
-    return `<th class="day-header">${dayNames[i]}<br><span class="day-num">${d.getDate()}</span></th>`;
-  }).join('');
-
-  const bodyRows = guests.map(member => {
-    const cells = weekDates.map(date => {
-      const status = getDinnerStatus(member, date);
-      if (status === 'yes') return `<td class="cell-yes"></td>`;
-      if (status === 'keep') return `<td class="cell-keep"><span class="keep-label">K</span></td>`;
-      return `<td class="cell-no"></td>`;
+  function buildHeaderCells() {
+    return weekDates.map((date, i) => {
+      const d = new Date(date + 'T12:00:00');
+      return `<th class="day-header">${dayNames[i]}<br><span class="day-num">${d.getDate()}</span></th>`;
     }).join('');
-    return `<tr><td class="name-cell">${member.name}</td>${cells}</tr>`;
-  }).join('');
+  }
 
-  const totalCells = weekDates.map(date => {
-    const count = guests.filter(m => getDinnerStatus(m, date) !== 'no').length;
-    return `<td class="total-cell">${count > 0 ? count : ''}</td>`;
-  }).join('');
+  function buildBodyRows(statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') {
+    return guests.map(member => {
+      const cells = weekDates.map(date => {
+        const status = statusFn(member, date);
+        if (status === 'yes') return `<td class="cell-yes"></td>`;
+        if (status === 'keep') return `<td class="cell-keep"><span class="keep-label">K</span></td>`;
+        return `<td class="cell-no"></td>`;
+      }).join('');
+      return `<tr><td class="name-cell">${member.name}</td>${cells}</tr>`;
+    }).join('');
+  }
+
+  function buildTotalCells(statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') {
+    return weekDates.map(date => {
+      const count = guests.filter(m => statusFn(m, date) !== 'no').length;
+      return `<td class="total-cell">${count > 0 ? count : ''}</td>`;
+    }).join('');
+  }
+
+  const headerCells = buildHeaderCells();
+  const dinnerRows  = buildBodyRows(getDinnerStatus);
+  const dinnerTotals = buildTotalCells(getDinnerStatus);
+  const lunchRows   = buildBodyRows(getLunchStatus);
+  const lunchTotals  = buildTotalCells(getLunchStatus);
 
   const first = new Date(weekDates[0] + 'T12:00:00');
   const last  = new Date(weekDates[6] + 'T12:00:00');
   const weekLabel = `${first.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – ${last.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<title>Dinner This Week — Les Joyeux</title><style>
-@page{size:A4 landscape;margin:2cm}
+<title>Meals This Week — Les Joyeux</title><style>
+@page{size:A4 landscape;margin:1.5cm}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;color:#1A1209;background:#fff}
-header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:14px;margin-bottom:18px}
-.fleur{font-size:24px;color:#C8973D;display:block;margin-bottom:6px}
-h1{font-size:22px;font-style:italic;font-family:Georgia,serif;color:#1A1209;margin-bottom:4px}
-.subtitle{font-size:12px;color:#8B6245}
-table{width:100%;border-collapse:collapse}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:10px;margin-bottom:14px}
+.fleur{font-size:22px;color:#C8973D;display:block;margin-bottom:4px}
+h1{font-size:20px;font-style:italic;font-family:Georgia,serif;color:#1A1209;margin-bottom:3px}
+.subtitle{font-size:11px;color:#8B6245}
+.section-title{font-size:13px;font-weight:700;color:#8B6245;margin:12px 0 6px;padding-left:2px}
+table{width:100%;border-collapse:collapse;margin-bottom:4px}
 th,td{border:1px solid #EDD9A3;vertical-align:middle;text-align:center}
-.name-cell{text-align:left;padding:7px 10px;font-size:13px;font-weight:600;white-space:nowrap;min-width:90px;max-width:140px}
-.day-header{padding:8px 4px;font-size:12px;font-weight:700;color:#8B6245;background:#FAF6EC;min-width:60px}
-.day-num{font-size:14px;font-weight:700;color:#1A1209;display:block}
-.cell-yes{background:#2D5A3D;height:36px}
-.cell-keep{background:#C8973D;height:36px}
-.cell-no{background:#FAF4E6;height:36px}
-.keep-label{font-weight:700;color:#fff;font-size:14px}
-.total-row td{background:#F0EBE0;font-weight:700;font-size:13px;padding:5px 4px}
+.name-cell{text-align:left;padding:5px 8px;font-size:12px;font-weight:600;white-space:nowrap;min-width:90px;max-width:140px}
+.day-header{padding:6px 4px;font-size:11px;font-weight:700;color:#8B6245;background:#FAF6EC;min-width:55px}
+.day-num{font-size:13px;font-weight:700;color:#1A1209;display:block}
+.cell-yes{background:#2D5A3D;height:28px}
+.cell-keep{background:#C8973D;height:28px}
+.cell-no{background:#FAF4E6;height:28px}
+.keep-label{font-weight:700;color:#fff;font-size:13px}
+.total-row td{background:#F0EBE0;font-weight:700;font-size:12px;padding:4px}
 .total-cell{color:#2D5A3D}
-.legend{margin-top:14px;display:flex;gap:18px;justify-content:center;font-size:11px;color:#8B6245}
+.legend{margin-top:10px;display:flex;gap:16px;justify-content:center;font-size:11px;color:#8B6245}
 .legend-item{display:flex;align-items:center;gap:5px}
-.legend-swatch{width:14px;height:14px;border-radius:2px;display:inline-block;border:1px solid #ddd}
-footer{margin-top:14px;text-align:center;font-size:10px;color:#B8956A}
-.close-btn{display:block;margin:20px auto 0;padding:9px 24px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer}
+.legend-swatch{width:12px;height:12px;border-radius:2px;display:inline-block;border:1px solid #ddd}
+footer{margin-top:10px;text-align:center;font-size:10px;color:#B8956A}
+.close-btn{display:block;margin:16px auto 0;padding:8px 22px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer}
 @media print{.close-btn{display:none}}
 </style></head><body>
 <header>
   <span class="fleur">✸</span>
-  <h1>Dinner This Week</h1>
+  <h1>Meals This Week</h1>
   <p class="subtitle">${weekLabel}</p>
 </header>
+<p class="section-title">🍽 Lunch</p>
 <table>
   <thead><tr><th class="name-cell"></th>${headerCells}</tr></thead>
-  <tbody>${bodyRows}</tbody>
-  <tfoot><tr><td class="name-cell total-row" style="color:#8B6245">Total</td>${totalCells}</tr></tfoot>
+  <tbody>${lunchRows}</tbody>
+  <tfoot><tr><td class="name-cell total-row" style="color:#8B6245">Total</td>${lunchTotals}</tr></tfoot>
+</table>
+<p class="section-title">🍷 Dinner</p>
+<table>
+  <thead><tr><th class="name-cell"></th>${headerCells}</tr></thead>
+  <tbody>${dinnerRows}</tbody>
+  <tfoot><tr><td class="name-cell total-row" style="color:#8B6245">Total</td>${dinnerTotals}</tr></tfoot>
 </table>
 <div class="legend">
-  <div class="legend-item"><span class="legend-swatch" style="background:#2D5A3D"></span> Present for dinner</div>
+  <div class="legend-item"><span class="legend-swatch" style="background:#2D5A3D"></span> Present</div>
   <div class="legend-item"><span class="legend-swatch" style="background:#C8973D"></span> Keep plate (K)</div>
   <div class="legend-item"><span class="legend-swatch" style="background:#FAF4E6"></span> Not present</div>
 </div>
@@ -238,7 +276,7 @@ footer{margin-top:14px;text-align:center;font-size:10px;color:#B8956A}
 <script>window.focus();window.print();<\/script>
 </body></html>`;
 
-  const w = window.open('', '_blank', 'width=900,height=650');
+  const w = window.open('', '_blank', 'width=960,height=700');
   if (w) { w.document.write(html); w.document.close(); }
 }
 
@@ -287,9 +325,12 @@ footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:
 
 function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   const today = todayStr();
-  const hereTonight = members.filter(
-    m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate
-  );
+  const hereTonight = members.filter(m => {
+    if (!m.arriveDate || !m.departDate) return false;
+    if (today < m.arriveDate || today > m.departDate) return false;
+    if (today === String(m.departDate).slice(0, 10) && BEFORE_DINNER_SLOTS.has(m.departSlot ?? '')) return false;
+    return true;
+  });
   if (hereTonight.length === 0) return null;
 
   const counts: Record<string, number> = {};
@@ -299,17 +340,26 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   }
   const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
 
-  const dinnerCount = members
-    .filter(m => m.role !== 'staff')
-    .filter(m => getDinnerStatus(m, today) !== 'no').length;
+  const nonStaff = members.filter(m => m.role !== 'staff');
+  const lunchCount  = nonStaff.filter(m => getLunchStatus(m, today) !== 'no').length;
+  const dinnerCount = nonStaff.filter(m => getDinnerStatus(m, today) !== 'no').length;
 
   return (
     <>
-      {dinnerCount > 0 && (
+      {(lunchCount > 0 || dinnerCount > 0) && (
         <View style={styles.dinnerRow}>
-          <Text style={styles.dinnerRowText}>
-            {'🍽 '}{dinnerCount} {dinnerCount === 1 ? 'person' : 'people'} for dinner tonight
-          </Text>
+          <View style={{ flex: 1, gap: 2 }}>
+            {lunchCount > 0 && (
+              <Text style={styles.dinnerRowText}>
+                {'🥗 '}{lunchCount} {lunchCount === 1 ? 'person' : 'people'} for lunch today
+              </Text>
+            )}
+            {dinnerCount > 0 && (
+              <Text style={styles.dinnerRowText}>
+                {'🍽 '}{dinnerCount} {dinnerCount === 1 ? 'person' : 'people'} for dinner tonight
+              </Text>
+            )}
+          </View>
           {Platform.OS === 'web' && (
             <TouchableOpacity onPress={() => printDinnerGrid(members)} activeOpacity={0.7} style={styles.dinnerPrintBtn}>
               <Text style={styles.dinnerPrintBtnText}>🖨</Text>

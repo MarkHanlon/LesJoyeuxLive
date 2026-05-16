@@ -96,6 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           v.arrive_slot                     AS "arriveSlot",
           v.depart_date::text               AS "departDate",
           v.depart_slot                     AS "departSlot",
+          v.save_lunch                      AS "saveLunch",
           v.save_dinner                     AS "saveDinner",
           COALESCE(
             CASE WHEN v.tonight_date = CURRENT_DATE THEN v.tonight_aperitif ELSE NULL END,
@@ -502,7 +503,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(404).json({
       error: 'Not found',
-      debug: { method, rawUrl: req.url, segmentSource, segments },
+      debug: { method, rawUrl: req.url, segments },
     });
   } catch (err: any) {
     console.error(JSON.stringify({ _api: true, error: err.message, stack: err.stack, method, rawUrl: req.url, segments }));
