@@ -1116,9 +1116,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 3,
   },
   summaryCardBadgeText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF' },
-  drinkBadgeWrap: { alignItems: 'center', flexShrink: 0, gap: 2 },
-  drinkBadge: { fontSize: 28 },
-  drinkBadgeLabel: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center' },
+  drinkBadgeWrap: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 6 },
+  drinkBadge: { fontSize: 22 },
+  drinkBadgeLabel: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245' },
   removeBtn: {
     borderWidth: 1.5, borderColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 14,
     borderRadius: 50, minWidth: 78, alignItems: 'center', flexShrink: 0,
