@@ -351,6 +351,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // GET /api/push/bell  — last bell info (cooldown check)
+    // POST /api/push/bell — ring the bell (any approved user, 5-min cooldown)
+    if (seg0 === 'push' && seg1 === 'bell' && !seg2) {
+      const bellUserId = req.headers['x-user-id'] as string | undefined;
+      if (!bellUserId) return res.status(401).json({ error: 'Unauthorized' });
+      const bellDb = getDb();
+      const [bellCaller] = await bellDb`SELECT id FROM users WHERE id = ${bellUserId} AND status = 'approved'`;
+      if (!bellCaller) return res.status(403).json({ error: 'Forbidden' });
+
+      await bellDb`
+        CREATE TABLE IF NOT EXISTS bells (
+          id       SERIAL      PRIMARY KEY,
+          sent_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sent_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
+          title    TEXT        NOT NULL,
+          body     TEXT        NOT NULL
+        )
+      `;
+
+      if (method === 'GET') {
+        const [last] = await bellDb`SELECT sent_at, title, body FROM bells ORDER BY sent_at DESC LIMIT 1`;
+        return res.status(200).json({ lastSentAt: last?.sent_at ?? null, title: last?.title ?? null });
+      }
+
+      if (method === 'POST') {
+        const COOLDOWN_MS = 5 * 60 * 1000;
+        const [last] = await bellDb`SELECT sent_at FROM bells ORDER BY sent_at DESC LIMIT 1`;
+        if (last) {
+          const elapsed = Date.now() - new Date(last.sent_at).getTime();
+          if (elapsed < COOLDOWN_MS) {
+            const availableAt = new Date(new Date(last.sent_at).getTime() + COOLDOWN_MS);
+            return res.status(429).json({ error: 'cooldown', lastSentAt: last.sent_at, availableAt: availableAt.toISOString() });
+          }
+        }
+        const { title, body } = req.body ?? {};
+        if (!title) return res.status(400).json({ error: 'title required' });
+        await sendPushToAll(bellDb, { title, body: body ?? '', url: '/' });
+        const [bell] = await bellDb`INSERT INTO bells (sent_by, title, body) VALUES (${bellUserId}, ${title}, ${body ?? ''}) RETURNING sent_at`;
+        return res.status(200).json({ ok: true, sentAt: bell.sent_at });
+      }
+
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     // GET /api/events  — list events in a date range (any approved user)
     // POST /api/events — create an event (admin only)
     if (seg0 === 'events' && !seg1) {
@@ -477,6 +521,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           event_time TEXT,
           created_by UUID        REFERENCES users(id) ON DELETE SET NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await db`
+        CREATE TABLE IF NOT EXISTS bells (
+          id       SERIAL      PRIMARY KEY,
+          sent_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sent_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
+          title    TEXT        NOT NULL,
+          body     TEXT        NOT NULL
         )
       `;
       if (req.query.reset === 'true') {

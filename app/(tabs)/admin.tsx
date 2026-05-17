@@ -323,6 +323,119 @@ footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:
   if (w) { w.document.write(html); w.document.close(); }
 }
 
+const BELL_COOLDOWN_MS = 5 * 60 * 1000;
+
+type BellType = 'lunch' | 'aperitif' | 'dinner' | 'custom';
+
+const BELL_PRESETS: Record<Exclude<BellType, 'custom'>, { icon: string; label: string; title: string; body: string }> = {
+  lunch:    { icon: '🔔', label: 'Ring the lunch bell',    title: '🔔 Lunch is ready!',    body: 'À table — come to lunch' },
+  aperitif: { icon: '🥂', label: 'Ring for apéritifs',     title: '🥂 Apéritifs!',          body: 'Come join us for drinks' },
+  dinner:   { icon: '🍽', label: 'Ring the dinner bell',   title: '🍽 Dinner is ready!',    body: 'À table — dinner is served' },
+};
+
+function currentBellType(): BellType {
+  const m = new Date().getHours() * 60 + new Date().getMinutes();
+  if (m >= 720  && m < 870)  return 'lunch';
+  if (m >= 1110 && m < 1200) return 'aperitif';
+  if (m >= 1200 && m < 1320) return 'dinner';
+  return 'custom';
+}
+
+function BellCard({ userId }: { userId: string }) {
+  const [lastSentAt, setLastSentAt] = useState<Date | null>(null);
+  const [ringing,   setRinging]    = useState(false);
+  const [customMsg, setCustomMsg]  = useState('');
+  const [now,       setNow]        = useState(() => new Date());
+  const [error,     setError]      = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    fetch('/api/push/bell', { headers: { 'x-user-id': userId } })
+      .then(r => r.json())
+      .then(d => { if (d.lastSentAt) setLastSentAt(new Date(d.lastSentAt)); })
+      .catch(() => {});
+  }, [userId]));
+
+  const type    = currentBellType();
+  const preset  = type !== 'custom' ? BELL_PRESETS[type] : null;
+  const elapsed = lastSentAt ? now.getTime() - lastSentAt.getTime() : BELL_COOLDOWN_MS;
+  const remaining   = Math.max(0, BELL_COOLDOWN_MS - elapsed);
+  const onCooldown  = remaining > 0;
+  const cooldownStr = onCooldown
+    ? `${Math.floor(remaining / 60000)}:${String(Math.ceil((remaining % 60000) / 1000)).padStart(2, '0')}`
+    : null;
+
+  async function ring() {
+    const title = preset ? preset.title : customMsg.trim();
+    const body  = preset ? preset.body  : '';
+    if (!title) return;
+    setRinging(true); setError(null);
+    try {
+      const res = await fetch('/api/push/bell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ title, body }),
+      });
+      const data = await res.json();
+      if (res.status === 429) {
+        setLastSentAt(new Date(data.lastSentAt));
+      } else if (res.ok) {
+        setLastSentAt(new Date(data.sentAt));
+        if (type === 'custom') setCustomMsg('');
+      } else {
+        setError(data.error ?? 'Failed to send');
+      }
+    } catch {
+      setError('Network error');
+    } finally {
+      setRinging(false);
+    }
+  }
+
+  const canRing = !onCooldown && !ringing && (type !== 'custom' || customMsg.trim().length > 0);
+
+  return (
+    <View style={styles.bellCard}>
+      {type === 'custom' && (
+        <TextInput
+          style={styles.bellInput}
+          placeholder="Type a message to send…"
+          placeholderTextColor="#B8956A"
+          value={customMsg}
+          onChangeText={setCustomMsg}
+          returnKeyType="send"
+          onSubmitEditing={canRing ? ring : undefined}
+        />
+      )}
+      <View style={styles.bellRow}>
+        <View style={{ flex: 1 }}>
+          {onCooldown ? (
+            <Text style={styles.bellCooldown}>🔕 Available again in {cooldownStr}</Text>
+          ) : (
+            <Text style={styles.bellLabel}>{preset?.icon ?? '📢'} {preset?.label ?? 'Send a message'}</Text>
+          )}
+          {error && <Text style={styles.bellError}>{error}</Text>}
+        </View>
+        <TouchableOpacity
+          style={[styles.bellBtn, !canRing && styles.bellBtnDisabled]}
+          onPress={ring}
+          disabled={!canRing}
+          activeOpacity={0.8}
+        >
+          {ringing
+            ? <ActivityIndicator color="#F5EDD6" size="small" />
+            : <Text style={styles.bellBtnText}>Ring</Text>
+          }
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   const today = todayStr();
   const hereTonight = members.filter(m => {
@@ -720,6 +833,7 @@ export default function FamilyScreen() {
       }
     >
       {canSeeSummary && <TonightSummaryCard members={members} />}
+      {canSeeSummary && user && <BellCard userId={user.id} />}
 
       {user?.isAdmin && pending.length > 0 && (
         <>
@@ -1224,6 +1338,38 @@ const styles = StyleSheet.create({
   dinnerRowText: { flex: 1, fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#1A1209' },
   dinnerPrintBtn: { paddingHorizontal: 6, paddingVertical: 2 },
   dinnerPrintBtnText: { fontSize: 20 },
+  bellCard: {
+    marginHorizontal: 16, marginBottom: 8, borderRadius: 12,
+    backgroundColor: '#FFF8EE', borderWidth: 1.5, borderColor: '#EDD9A3', overflow: 'hidden',
+  },
+  bellRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  bellLabel: {
+    fontSize: 14, color: '#5C3A1E', fontWeight: '600',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
+  },
+  bellCooldown: {
+    fontSize: 13, color: '#B8956A',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
+  },
+  bellInput: {
+    borderBottomWidth: 1, borderBottomColor: '#EDD9A3',
+    paddingHorizontal: 16, paddingVertical: 10,
+    fontSize: 14, color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
+  },
+  bellBtn: {
+    backgroundColor: '#C85A2E', paddingVertical: 9, paddingHorizontal: 20,
+    borderRadius: 50, minWidth: 68, alignItems: 'center',
+  },
+  bellBtnDisabled: { backgroundColor: '#D9C9A3' },
+  bellBtnText: {
+    color: '#F5EDD6', fontSize: 13, fontWeight: '700',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
+  },
+  bellError: {
+    fontSize: 12, color: '#C85A2E', marginTop: 2,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
+  },
 });
 
 const bannerStyles = StyleSheet.create({
