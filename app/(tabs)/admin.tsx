@@ -710,7 +710,7 @@ export default function FamilyScreen() {
   }
 
   const currentMember = members.find(m => m.id === user?.id);
-  const canSeeSummary = currentMember?.role === 'staff' || currentMember?.role === 'admin' || user?.isAdmin;
+  const canSeeSummary = !!currentMember;
 
   const renderPeopleTab = () => (
     <ScrollView
