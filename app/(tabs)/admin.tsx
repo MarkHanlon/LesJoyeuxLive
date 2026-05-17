@@ -335,9 +335,9 @@ const BELL_PRESETS: Record<Exclude<BellType, 'custom'>, { icon: string; label: s
 
 function currentBellType(): BellType {
   const m = new Date().getHours() * 60 + new Date().getMinutes();
-  if (m >= 720  && m < 870)  return 'lunch';
-  if (m >= 1110 && m < 1200) return 'aperitif';
-  if (m >= 1200 && m < 1320) return 'dinner';
+  if (m >= 715  && m < 870)  return 'lunch';     // 11:55–14:30
+  if (m >= 1105 && m < 1200) return 'aperitif';  // 18:25–20:00
+  if (m >= 1195 && m < 1320) return 'dinner';    // 19:55–22:00
   return 'custom';
 }
 
