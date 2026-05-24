@@ -1197,6 +1197,29 @@ export default function FamilyScreen() {
           <TouchableOpacity onPress={() => fetchAll()} style={{ marginTop: 16 }}>
             <Text style={styles.retryText}>Tap to retry</Text>
           </TouchableOpacity>
+          {user?.isAdmin && (
+            <View style={[styles.migrateCard, { marginTop: 32 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.migrateLabel}>Database migrations</Text>
+                {migrateResult && (
+                  <Text style={[styles.migrateResult, migrateResult.ok ? styles.migrateResultOk : styles.migrateResultErr]}>
+                    {migrateResult.message}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[styles.migrateBtn, isMigrating && styles.migrateBtnBusy]}
+                onPress={runMigrate}
+                disabled={isMigrating}
+                activeOpacity={0.8}
+              >
+                {isMigrating
+                  ? <ActivityIndicator color="#5C3D2E" size="small" />
+                  : <Text style={styles.migrateBtnText}>Run</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       ) : activeTab === 'people' ? renderPeopleTab() : renderEventsTab()}
     </View>
