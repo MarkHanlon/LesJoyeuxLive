@@ -657,6 +657,27 @@ export default function FamilyScreen() {
   const [newTime, setNewTime] = useState('');
   const [savingEvent, setSavingEvent] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function runMigrate() {
+    if (!user) return;
+    setIsMigrating(true);
+    setMigrateResult(null);
+    try {
+      const res = await fetch('/api/migrate', { method: 'POST', headers: { 'x-admin-id': user.id } });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMigrateResult({ ok: true, message: body.message ?? 'Migrations applied ✓' });
+      } else {
+        setMigrateResult({ ok: false, message: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e: any) {
+      setMigrateResult({ ok: false, message: e?.message ?? 'Network error' });
+    } finally {
+      setIsMigrating(false);
+    }
+  }
 
   const fetchAll = useCallback(async (showRefresh = false) => {
     if (!user) return;
@@ -940,6 +961,30 @@ export default function FamilyScreen() {
 
       {user?.isAdmin && pending.length === 0 && members.length > 0 && (
         <Text style={styles.allClear}>All caught up — no one waiting 🌿</Text>
+      )}
+
+      {user?.isAdmin && (
+        <View style={styles.migrateCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.migrateLabel}>Database migrations</Text>
+            {migrateResult && (
+              <Text style={[styles.migrateResult, migrateResult.ok ? styles.migrateResultOk : styles.migrateResultErr]}>
+                {migrateResult.message}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.migrateBtn, isMigrating && styles.migrateBtnBusy]}
+            onPress={runMigrate}
+            disabled={isMigrating}
+            activeOpacity={0.8}
+          >
+            {isMigrating
+              ? <ActivityIndicator color="#5C3D2E" size="small" />
+              : <Text style={styles.migrateBtnText}>Run</Text>
+            }
+          </TouchableOpacity>
+        </View>
       )}
     </ScrollView>
   );
@@ -1273,6 +1318,14 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 22, fontFamily: 'Playfair Display, Georgia, serif', fontStyle: 'italic', color: '#1A1209', marginBottom: 8 },
   emptyBody: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center', lineHeight: 22 },
   allClear: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', textAlign: 'center', fontStyle: 'italic', marginTop: 6 },
+  migrateCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 24, marginBottom: 8, padding: 14, backgroundColor: '#FAF4E6', borderRadius: 12, borderWidth: 1, borderColor: '#EDD9A3' },
+  migrateLabel: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#8B6245' },
+  migrateResult: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', marginTop: 3 },
+  migrateResultOk: { color: '#2D5A3D' },
+  migrateResultErr: { color: '#C85A2E' },
+  migrateBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 50, borderWidth: 1.5, borderColor: '#C8973D', minWidth: 56, alignItems: 'center' },
+  migrateBtnBusy: { opacity: 0.6 },
+  migrateBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#5C3D2E' },
   errorText: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', textAlign: 'center', paddingHorizontal: 32 },
   retryText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C85A2E', textDecorationLine: 'underline' },
   // Events tab
