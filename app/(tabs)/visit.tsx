@@ -30,6 +30,7 @@ const DRINKS = [
   { key: 'vodka_coke',  label: 'Vodka & Coke',     hint: 'vodka & cola',              icon: '🍹' },
   { key: 'gin_orange',  label: 'Gin & Orange',     hint: 'gin & OJ',                  icon: '🍊' },
   { key: 'cuba_libre',  label: 'Cuba Libre',       hint: 'rum, cola & lime',          icon: '🌴' },
+  { key: 'skinny_bitch', label: 'Skinny Bitch',   hint: 'vodka & soda',              icon: '💅' },
   { key: 'beer',        label: 'Beer',             hint: 'une bière',                 icon: '🍺' },
   { key: 'sparkling',   label: 'Sparkling Water',  hint: 'eau pétillante',            icon: '💧' },
   { key: 'oj',          label: 'Orange Juice',     hint: "jus d'orange",              icon: '🍊' },
