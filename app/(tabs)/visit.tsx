@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -76,6 +77,12 @@ type VisitPlan = {
   departSlot: TimeSlot;
   aperitif: DrinkKey | null;
   tonightAperitif: DrinkKey | null; // tonight-only override, null if not set for today
+  pickupNeeded: boolean;
+  pickupTime: string;
+  pickupFrom: string;
+  dropoffNeeded: boolean;
+  dropoffTime: string;
+  dropoffTo: string;
 };
 
 function todayStr(): string {
@@ -106,7 +113,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null };
+  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '' };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -298,6 +305,12 @@ export default function VisitScreen() {
           departSlot:      d.depart_slot as TimeSlot,
           aperitif:        (d.aperitif as DrinkKey) ?? null,
           tonightAperitif: (d.tonight_aperitif as DrinkKey) ?? null,
+          pickupNeeded:    !!d.pickup_needed,
+          pickupTime:      d.pickup_time ?? '',
+          pickupFrom:      d.pickup_from ?? '',
+          dropoffNeeded:   !!d.dropoff_needed,
+          dropoffTime:     d.dropoff_time ?? '',
+          dropoffTo:       d.dropoff_to ?? '',
         };
         setSaved(plan);
         setForm(plan);
@@ -328,13 +341,19 @@ export default function VisitScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          arriveDate: form.arriveDate,
-          arriveSlot: form.arriveSlot,
-          saveLunch:  form.saveLunch,
-          saveDinner: form.saveDinner,
-          departDate: form.departDate,
-          departSlot: form.departSlot,
-          aperitif:   form.aperitif,
+          arriveDate:    form.arriveDate,
+          arriveSlot:    form.arriveSlot,
+          saveLunch:     form.saveLunch,
+          saveDinner:    form.saveDinner,
+          departDate:    form.departDate,
+          departSlot:    form.departSlot,
+          aperitif:      form.aperitif,
+          pickupNeeded:  form.pickupNeeded,
+          pickupTime:    form.pickupTime,
+          pickupFrom:    form.pickupFrom,
+          dropoffNeeded: form.dropoffNeeded,
+          dropoffTime:   form.dropoffTime,
+          dropoffTo:     form.dropoffTo,
         }),
       });
       if (res.ok) {
@@ -431,6 +450,11 @@ export default function VisitScreen() {
             <Text style={styles.summarySlot}>{slotLabel(saved.arriveSlot)}</Text>
             {saved.saveLunch  && <Text style={styles.plateNote}>🍽  Lunch plate saved for you</Text>}
             {saved.saveDinner && <Text style={styles.plateNote}>🍽  Dinner plate saved for you</Text>}
+            {saved.pickupNeeded && (
+              <Text style={styles.transportNote}>
+                🚗  Pick up{saved.pickupTime ? ` at ${saved.pickupTime}` : ''}{saved.pickupFrom ? ` from ${saved.pickupFrom}` : ''}
+              </Text>
+            )}
           </View>
 
           {(effectiveDrink || isStaying) && (
@@ -526,6 +550,11 @@ export default function VisitScreen() {
             <Text style={styles.summaryEyebrow}>Leaving</Text>
             <Text style={styles.summaryDate}>{formatDate(saved.departDate)}</Text>
             <Text style={styles.summarySlot}>{slotLabel(saved.departSlot)}</Text>
+            {saved.dropoffNeeded && (
+              <Text style={styles.transportNote}>
+                🚗  Drop off{saved.dropoffTime ? ` at ${saved.dropoffTime}` : ''}{saved.dropoffTo ? ` to ${saved.dropoffTo}` : ''}
+              </Text>
+            )}
           </View>
         </View>
       ) : (
@@ -569,6 +598,56 @@ export default function VisitScreen() {
                 />
               </View>
             )}
+
+            <View style={styles.plateToggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.plateToggleLabel}>Need picking up?</Text>
+                <Text style={styles.plateToggleHint}>We'll come and collect you</Text>
+              </View>
+              <Switch
+                value={form.pickupNeeded}
+                onValueChange={v => updateForm({ pickupNeeded: v })}
+                trackColor={{ true: '#2D5A3D', false: '#D9C9A3' }}
+                thumbColor={Platform.OS === 'ios' ? undefined : '#F5EDD6'}
+              />
+            </View>
+            {form.pickupNeeded && (
+              <View style={styles.transportDetails}>
+                <View style={styles.transportField}>
+                  <Text style={styles.transportFieldLabel}>Pick-up time</Text>
+                  {Platform.OS === 'web' ? (
+                    <View style={styles.transportTimeWrapper}>
+                      <Text style={styles.transportTimeText}>{form.pickupTime || '-- : --'}</Text>
+                      <input
+                        type="time"
+                        value={form.pickupTime}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateForm({ pickupTime: e.target.value })}
+                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', border: 'none' } as React.CSSProperties}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={styles.transportInput}
+                      value={form.pickupTime}
+                      onChangeText={t => updateForm({ pickupTime: t })}
+                      placeholder="HH:MM"
+                      placeholderTextColor="#B8956A"
+                      keyboardType="numbers-and-punctuation"
+                    />
+                  )}
+                </View>
+                <View style={[styles.transportField, { flex: 1 }]}>
+                  <Text style={styles.transportFieldLabel}>Pick-up from</Text>
+                  <TextInput
+                    style={styles.transportInput}
+                    value={form.pickupFrom}
+                    onChangeText={t => updateForm({ pickupFrom: t })}
+                    placeholder="e.g. Carcassonne Airport"
+                    placeholderTextColor="#B8956A"
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Apéritif section */}
@@ -589,6 +668,56 @@ export default function VisitScreen() {
 
             <Text style={styles.sectionSubLabel}>At roughly</Text>
             <SlotPicker value={form.departSlot} onChange={s => updateForm({ departSlot: s })} />
+
+            <View style={styles.plateToggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.plateToggleLabel}>Need dropping off?</Text>
+                <Text style={styles.plateToggleHint}>We'll give you a lift</Text>
+              </View>
+              <Switch
+                value={form.dropoffNeeded}
+                onValueChange={v => updateForm({ dropoffNeeded: v })}
+                trackColor={{ true: '#2D5A3D', false: '#D9C9A3' }}
+                thumbColor={Platform.OS === 'ios' ? undefined : '#F5EDD6'}
+              />
+            </View>
+            {form.dropoffNeeded && (
+              <View style={styles.transportDetails}>
+                <View style={styles.transportField}>
+                  <Text style={styles.transportFieldLabel}>Drop-off time</Text>
+                  {Platform.OS === 'web' ? (
+                    <View style={styles.transportTimeWrapper}>
+                      <Text style={styles.transportTimeText}>{form.dropoffTime || '-- : --'}</Text>
+                      <input
+                        type="time"
+                        value={form.dropoffTime}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateForm({ dropoffTime: e.target.value })}
+                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', border: 'none' } as React.CSSProperties}
+                      />
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={styles.transportInput}
+                      value={form.dropoffTime}
+                      onChangeText={t => updateForm({ dropoffTime: t })}
+                      placeholder="HH:MM"
+                      placeholderTextColor="#B8956A"
+                      keyboardType="numbers-and-punctuation"
+                    />
+                  )}
+                </View>
+                <View style={[styles.transportField, { flex: 1 }]}>
+                  <Text style={styles.transportFieldLabel}>Drop-off to</Text>
+                  <TextInput
+                    style={styles.transportInput}
+                    value={form.dropoffTo}
+                    onChangeText={t => updateForm({ dropoffTo: t })}
+                    placeholder="e.g. Carcassonne Airport"
+                    placeholderTextColor="#B8956A"
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Buttons */}
@@ -1101,5 +1230,60 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#F5EDD6',
     letterSpacing: 0.3,
+  },
+
+  // Transport
+  transportNote: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#1A6B8A',
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  transportDetails: {
+    marginTop: 12,
+    gap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  transportField: {
+    gap: 4,
+  },
+  transportFieldLabel: {
+    fontSize: 11,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#8B6245',
+    letterSpacing: 1,
+    textTransform: 'uppercase' as const,
+  },
+  transportInput: {
+    borderWidth: 1.5,
+    borderColor: '#EDD9A3',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#1A1209',
+    backgroundColor: '#FAF4E6',
+    minWidth: 100,
+  },
+  transportTimeWrapper: {
+    position: 'relative',
+    borderWidth: 1.5,
+    borderColor: '#EDD9A3',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    backgroundColor: '#FAF4E6',
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  transportTimeText: {
+    fontSize: 15,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#1A1209',
   },
 });

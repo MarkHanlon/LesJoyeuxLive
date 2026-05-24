@@ -107,6 +107,12 @@ type FamilyMember = {
   saveLunch?: boolean | null;
   saveDinner?: boolean | null;
   avatar?: string | null;
+  pickupNeeded?: boolean | null;
+  pickupTime?: string | null;
+  pickupFrom?: string | null;
+  dropoffNeeded?: boolean | null;
+  dropoffTime?: string | null;
+  dropoffTo?: string | null;
 };
 
 type ChateauEvent = {
@@ -566,6 +572,16 @@ function MemberCard({
             </>
           ) : (
             <Text style={styles.visitNone}>No upcoming visit</Text>
+          )}
+          {(isHere || isFuture) && member.pickupNeeded && (
+            <Text style={styles.transportNote}>
+              🚗 Pick up{member.pickupTime ? ` ${member.pickupTime}` : ''}{member.pickupFrom ? ` · ${member.pickupFrom}` : ''}
+            </Text>
+          )}
+          {(isHere || isFuture) && member.dropoffNeeded && (
+            <Text style={styles.transportNote}>
+              🚗 Drop off{member.dropoffTime ? ` ${member.dropoffTime}` : ''}{member.dropoffTo ? ` · ${member.dropoffTo}` : ''}
+            </Text>
           )}
         </View>
 
@@ -1208,6 +1224,7 @@ const styles = StyleSheet.create({
   visitFuture: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 3, lineHeight: 17 },
   visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
   visitNone: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginTop: 3 },
+  transportNote: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#1A6B8A', marginTop: 2, lineHeight: 17 },
   summaryCard: {
     marginHorizontal: 16, marginTop: 16, marginBottom: 4,
     backgroundColor: '#FFFFFF', borderRadius: 16,

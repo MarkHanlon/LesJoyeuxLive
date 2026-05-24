@@ -102,6 +102,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             CASE WHEN v.tonight_date = CURRENT_DATE THEN v.tonight_aperitif ELSE NULL END,
             v.aperitif
           )                                 AS "aperitif",
+          v.pickup_needed                   AS "pickupNeeded",
+          v.pickup_time                     AS "pickupTime",
+          v.pickup_from                     AS "pickupFrom",
+          v.dropoff_needed                  AS "dropoffNeeded",
+          v.dropoff_time                    AS "dropoffTime",
+          v.dropoff_to                      AS "dropoffTo",
           v.updated_at                      AS "visitUpdatedAt"
         FROM  users u
         LEFT  JOIN visits v ON v.user_id = u.id
@@ -125,32 +131,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             depart_date::text,
             depart_slot,
             aperitif,
-            CASE WHEN tonight_date = CURRENT_DATE THEN tonight_aperitif ELSE NULL END AS tonight_aperitif
+            CASE WHEN tonight_date = CURRENT_DATE THEN tonight_aperitif ELSE NULL END AS tonight_aperitif,
+            pickup_needed,
+            pickup_time,
+            pickup_from,
+            dropoff_needed,
+            dropoff_time,
+            dropoff_to
           FROM visits WHERE user_id = ${id} LIMIT 1
         `;
         if (rows.length === 0) return res.status(404).json({ visit: null });
         return res.status(200).json(rows[0]);
       }
       if (method === 'POST') {
-        const { arriveDate, arriveSlot, saveLunch, saveDinner, departDate, departSlot, aperitif } = req.body ?? {};
+        const { arriveDate, arriveSlot, saveLunch, saveDinner, departDate, departSlot, aperitif,
+                pickupNeeded, pickupTime, pickupFrom, dropoffNeeded, dropoffTime, dropoffTo } = req.body ?? {};
         if (!arriveDate || !departDate) return res.status(400).json({ error: 'Dates required' });
         if (!VALID_SLOTS.includes(arriveSlot) || !VALID_SLOTS.includes(departSlot))
           return res.status(400).json({ error: 'Invalid time slot' });
         if (departDate < arriveDate) return res.status(400).json({ error: 'Departure must be on or after arrival' });
-        const aperitifVal = typeof aperitif === 'string' && aperitif ? aperitif : null;
+        const aperitifVal    = typeof aperitif    === 'string' && aperitif    ? aperitif    : null;
+        const pickupTimeVal  = typeof pickupTime  === 'string' && pickupTime  ? pickupTime  : null;
+        const pickupFromVal  = typeof pickupFrom  === 'string' && pickupFrom  ? pickupFrom  : null;
+        const dropoffTimeVal = typeof dropoffTime === 'string' && dropoffTime ? dropoffTime : null;
+        const dropoffToVal   = typeof dropoffTo   === 'string' && dropoffTo   ? dropoffTo   : null;
         const [row] = await db`
-          INSERT INTO visits (user_id, arrive_date, arrive_slot, save_lunch, save_dinner, depart_date, depart_slot, aperitif)
-          VALUES (${id}, ${arriveDate}, ${arriveSlot}, ${!!saveLunch}, ${!!saveDinner}, ${departDate}, ${departSlot}, ${aperitifVal})
+          INSERT INTO visits (user_id, arrive_date, arrive_slot, save_lunch, save_dinner, depart_date, depart_slot, aperitif,
+                              pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to)
+          VALUES (${id}, ${arriveDate}, ${arriveSlot}, ${!!saveLunch}, ${!!saveDinner}, ${departDate}, ${departSlot}, ${aperitifVal},
+                  ${!!pickupNeeded}, ${pickupTimeVal}, ${pickupFromVal}, ${!!dropoffNeeded}, ${dropoffTimeVal}, ${dropoffToVal})
           ON CONFLICT (user_id) DO UPDATE SET
-            arrive_date = EXCLUDED.arrive_date,
-            arrive_slot = EXCLUDED.arrive_slot,
-            save_lunch  = EXCLUDED.save_lunch,
-            save_dinner = EXCLUDED.save_dinner,
-            depart_date = EXCLUDED.depart_date,
-            depart_slot = EXCLUDED.depart_slot,
-            aperitif    = EXCLUDED.aperitif,
-            updated_at  = NOW()
-          RETURNING arrive_date::text, arrive_slot, save_lunch, save_dinner, depart_date::text, depart_slot, aperitif
+            arrive_date    = EXCLUDED.arrive_date,
+            arrive_slot    = EXCLUDED.arrive_slot,
+            save_lunch     = EXCLUDED.save_lunch,
+            save_dinner    = EXCLUDED.save_dinner,
+            depart_date    = EXCLUDED.depart_date,
+            depart_slot    = EXCLUDED.depart_slot,
+            aperitif       = EXCLUDED.aperitif,
+            pickup_needed  = EXCLUDED.pickup_needed,
+            pickup_time    = EXCLUDED.pickup_time,
+            pickup_from    = EXCLUDED.pickup_from,
+            dropoff_needed = EXCLUDED.dropoff_needed,
+            dropoff_time   = EXCLUDED.dropoff_time,
+            dropoff_to     = EXCLUDED.dropoff_to,
+            updated_at     = NOW()
+          RETURNING arrive_date::text, arrive_slot, save_lunch, save_dinner, depart_date::text, depart_slot, aperitif,
+                    pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to
         `;
         return res.status(200).json(row);
       }
@@ -502,6 +528,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS aperitif TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_aperitif TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tonight_date DATE`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS pickup_needed  BOOLEAN NOT NULL DEFAULT false`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS pickup_time    TEXT`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS pickup_from    TEXT`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_needed BOOLEAN NOT NULL DEFAULT false`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_time   TEXT`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_to     TEXT`;
       await db`
         CREATE TABLE IF NOT EXISTS push_subscriptions (
           id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
