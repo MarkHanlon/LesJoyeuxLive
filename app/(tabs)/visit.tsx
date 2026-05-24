@@ -18,10 +18,6 @@ type TimeSlot = 'morning' | 'lunchtime' | 'afternoon' | 'dinnertime' | 'evening'
 
 const DRINKS = [
   { key: 'pastis',      label: 'Pastis',           hint: 'Ricard, 51…',              icon: '🌿' },
-  { key: 'kir',         label: 'Kir',              hint: 'white wine & cassis',       icon: '💜' },
-  { key: 'cremant',     label: 'Crémant',          hint: 'or champagne',              icon: '🍾' },
-  { key: 'lillet',      label: 'Lillet Blanc',     hint: 'sur glace',                 icon: '🍸' },
-  { key: 'suze',        label: 'Suze',             hint: 'gentiane — très français',  icon: '🌼' },
   { key: 'red_wine',    label: 'Red Wine',         hint: 'un rouge',                  icon: '🍷' },
   { key: 'white_wine',  label: 'White Wine',       hint: 'un blanc',                  icon: '🫗' },
   { key: 'rose',        label: 'Rosé',             hint: 'rosé, bien sûr',            icon: '🌸' },
