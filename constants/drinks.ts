@@ -3,6 +3,7 @@ export const DRINK_ICONS: Record<string, string> = {
   lillet: '🍸', suze: '🌼', red_wine: '🍷', white_wine: '🫗',
   rose: '🌸', gt: '🧊', beer: '🍺', sparkling: '💧',
   oj: '🍊', lemonade: '🍋', cola: '🥤',
+  rum_coke: '🥃', vodka_coke: '🍹', gin_orange: '🍊', cuba_libre: '🌴',
 };
 
 export const DRINK_LABELS: Record<string, string> = {
@@ -10,4 +11,5 @@ export const DRINK_LABELS: Record<string, string> = {
   lillet: 'Lillet', suze: 'Suze', red_wine: 'Red Wine', white_wine: 'White Wine',
   rose: 'Rosé', gt: 'G&T', beer: 'Beer', sparkling: 'Sparkling Water',
   oj: 'Orange Juice', lemonade: 'Lemonade', cola: 'Cola',
+  rum_coke: 'Rum & Coke', vodka_coke: 'Vodka & Coke', gin_orange: 'Gin & Orange', cuba_libre: 'Cuba Libre',
 };
