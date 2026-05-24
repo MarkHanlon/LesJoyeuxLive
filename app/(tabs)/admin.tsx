@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -522,6 +523,7 @@ function MemberCard({
   removing,
   onRoleChange,
   changingRole,
+  onPress,
 }: {
   member: FamilyMember;
   managing?: boolean;
@@ -529,6 +531,7 @@ function MemberCard({
   removing?: boolean;
   onRoleChange?: (role: Role) => void;
   changingRole?: boolean;
+  onPress?: () => void;
 }) {
   const today = todayStr();
   const hasVisit = !!(member.arriveDate && member.departDate);
@@ -539,7 +542,11 @@ function MemberCard({
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
 
   return (
-    <View style={[styles.card, (managing && onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}>
+    <TouchableOpacity
+      activeOpacity={0.75}
+      onPress={onPress}
+      style={[styles.card, (managing && onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}
+    >
       {/* Main row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
         {member.avatar
@@ -633,7 +640,100 @@ function MemberCard({
           })}
         </View>
       )}
-    </View>
+    </TouchableOpacity>
+  );
+}
+
+function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; onClose: () => void }) {
+  if (!member) return null;
+  const today = todayStr();
+  const hasVisit = !!(member.arriveDate && member.departDate);
+  const isHere   = hasVisit && today >= member.arriveDate! && today <= member.departDate!;
+  const isFuture = hasVisit && today < member.arriveDate!;
+  const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
+  const drinkIcon  = member.aperitif ? (DRINK_ICONS[member.aperitif]  ?? '🍷') : null;
+  const drinkLabel = member.aperitif ? (DRINK_LABELS[member.aperitif] ?? member.aperitif) : null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.modalCard}>
+
+          {/* Avatar + name + role */}
+          <View style={styles.modalHeader}>
+            {member.avatar
+              ? <Image source={{ uri: member.avatar }} style={styles.modalAvatar} />
+              : <View style={[styles.modalAvatarCircle, { backgroundColor: avatarColor(member.name) }]}>
+                  <Text style={styles.modalAvatarText}>{initials(member.name)}</Text>
+                </View>
+            }
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalName}>{member.name}</Text>
+              <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border, alignSelf: 'flex-start', marginTop: 4 }]}>
+                <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.modalDivider} />
+
+          {hasVisit ? (
+            <>
+              {/* Arriving */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalEyebrow}>ARRIVING</Text>
+                <Text style={styles.modalDateLine}>{formatDate(member.arriveDate!)}
+                  <Text style={styles.modalSlot}>  {slotLabel(member.arriveSlot!)}</Text>
+                </Text>
+                {isHere && <Text style={styles.modalHereNow}>● Here now</Text>}
+                {member.saveLunch  && <Text style={styles.modalNote}>🍽  Lunch plate saved</Text>}
+                {member.saveDinner && <Text style={styles.modalNote}>🍽  Dinner plate saved</Text>}
+                {member.pickupNeeded && (
+                  <Text style={styles.modalTransport}>
+                    🚗  Pick up{member.pickupTime ? ` at ${member.pickupTime}` : ''}{member.pickupFrom ? ` from ${member.pickupFrom}` : ''}
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.modalDivider} />
+
+              {/* Leaving */}
+              <View style={styles.modalSection}>
+                <Text style={styles.modalEyebrow}>LEAVING</Text>
+                <Text style={styles.modalDateLine}>{formatDate(member.departDate!)}
+                  <Text style={styles.modalSlot}>  {slotLabel(member.departSlot!)}</Text>
+                </Text>
+                {member.dropoffNeeded && (
+                  <Text style={styles.modalTransport}>
+                    🚗  Drop off{member.dropoffTime ? ` at ${member.dropoffTime}` : ''}{member.dropoffTo ? ` to ${member.dropoffTo}` : ''}
+                  </Text>
+                )}
+              </View>
+
+              {/* Apéritif */}
+              {drinkIcon && (
+                <>
+                  <View style={styles.modalDivider} />
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalEyebrow}>APÉRITIF</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                      <Text style={{ fontSize: 28 }}>{drinkIcon}</Text>
+                      <Text style={styles.modalDrinkLabel}>{drinkLabel}</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+            </>
+          ) : (
+            <View style={styles.modalSection}>
+              <Text style={styles.modalNoVisit}>No visit planned yet</Text>
+            </View>
+          )}
+
+          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -659,6 +759,7 @@ export default function FamilyScreen() {
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
 
   async function runMigrate() {
     if (!user) return;
@@ -935,6 +1036,7 @@ export default function FamilyScreen() {
             removing={removingIds.has(m.id)}
             onRoleChange={(managing && user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
             changingRole={changingRoleIds.has(m.id)}
+            onPress={() => setSelectedMember(m)}
           />
         );
 
@@ -1222,6 +1324,8 @@ export default function FamilyScreen() {
           )}
         </View>
       ) : activeTab === 'people' ? renderPeopleTab() : renderEventsTab()}
+
+      <MemberDetailModal member={selectedMember} onClose={() => setSelectedMember(null)} />
     </View>
   );
 }
@@ -1293,6 +1397,26 @@ const styles = StyleSheet.create({
   visitLeaving: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', lineHeight: 17 },
   visitNone: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginTop: 3 },
   transportNote: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#1A6B8A', marginTop: 2, lineHeight: 17 },
+
+  // Member detail modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(26,18,9,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalCard: { backgroundColor: '#FFFDF5', borderRadius: 20, width: '100%', maxWidth: 420, paddingVertical: 24, paddingHorizontal: 24, borderWidth: 1, borderColor: '#EDD9A3', shadowColor: '#1A1209', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 12 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 4 },
+  modalAvatar: { width: 60, height: 60, borderRadius: 30 },
+  modalAvatarCircle: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
+  modalAvatarText: { fontSize: 22, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#fff' },
+  modalName: { fontSize: 24, fontFamily: 'Playfair Display, Georgia, serif', fontStyle: 'italic', color: '#1A1209', lineHeight: 30 },
+  modalDivider: { height: 1, backgroundColor: '#EDD9A3', marginVertical: 14 },
+  modalSection: { gap: 4 },
+  modalEyebrow: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#C8973D', letterSpacing: 1.5, marginBottom: 2 },
+  modalDateLine: { fontSize: 18, fontFamily: 'Playfair Display, Georgia, serif', fontWeight: '700', color: '#1A1209' },
+  modalSlot: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '400', color: '#5C3D2E' },
+  modalHereNow: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#2D5A3D', marginTop: 2 },
+  modalNote: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#2D5A3D', marginTop: 2 },
+  modalTransport: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#1A6B8A', marginTop: 2 },
+  modalDrinkLabel: { fontSize: 18, fontFamily: 'Playfair Display, Georgia, serif', color: '#1A1209' },
+  modalNoVisit: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', fontStyle: 'italic' },
+  modalDismissHint: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C8A96A', textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
   summaryCard: {
     marginHorizontal: 16, marginTop: 16, marginBottom: 4,
     backgroundColor: '#FFFFFF', borderRadius: 16,
