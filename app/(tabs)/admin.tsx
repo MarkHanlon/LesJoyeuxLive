@@ -444,7 +444,12 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
     if (today === String(m.departDate).slice(0, 10) && BEFORE_DINNER_SLOTS.has(m.departSlot ?? '')) return false;
     return true;
   });
-  if (hereTonight.length === 0) return null;
+
+  const nonStaff = members.filter(m => m.role !== 'staff');
+  const lunchCount  = nonStaff.filter(m => getLunchStatus(m, today) !== 'no').length;
+  const dinnerCount = nonStaff.filter(m => getDinnerStatus(m, today) !== 'no').length;
+
+  if (hereTonight.length === 0 && lunchCount === 0 && dinnerCount === 0) return null;
 
   const counts: Record<string, number> = {};
   for (const m of hereTonight) {
@@ -452,10 +457,6 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
     counts[key] = (counts[key] ?? 0) + 1;
   }
   const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
-
-  const nonStaff = members.filter(m => m.role !== 'staff');
-  const lunchCount  = nonStaff.filter(m => getLunchStatus(m, today) !== 'no').length;
-  const dinnerCount = nonStaff.filter(m => getDinnerStatus(m, today) !== 'no').length;
 
   return (
     <>
@@ -480,34 +481,36 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
           )}
         </View>
       )}
-      <View style={[styles.summaryCard, dinnerCount > 0 && { marginTop: 4 }]}>
-        {Platform.OS === 'web' ? (
-          <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
-            <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
-              {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
-        )}
-        <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
-        <View style={styles.summaryCardRows}>
-          {rows.map(([key, count]) => {
-            const isUndecided = key === '__undecided__';
-            const icon = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
-            const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
-            return (
-              <View key={key} style={styles.summaryCardRow}>
-                <Text style={styles.summaryCardIcon}>{icon}</Text>
-                <Text style={styles.summaryCardLabel}>{label}</Text>
-                <View style={styles.summaryCardBadge}>
-                  <Text style={styles.summaryCardBadgeText}>×{count}</Text>
+      {hereTonight.length > 0 && (
+        <View style={[styles.summaryCard, (lunchCount > 0 || dinnerCount > 0) && { marginTop: 4 }]}>
+          {Platform.OS === 'web' ? (
+            <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
+              <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
+                {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
+          )}
+          <Text style={styles.summaryCardSub}>{hereTonight.length} {hereTonight.length === 1 ? 'person' : 'people'} here tonight</Text>
+          <View style={styles.summaryCardRows}>
+            {rows.map(([key, count]) => {
+              const isUndecided = key === '__undecided__';
+              const icon = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
+              const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
+              return (
+                <View key={key} style={styles.summaryCardRow}>
+                  <Text style={styles.summaryCardIcon}>{icon}</Text>
+                  <Text style={styles.summaryCardLabel}>{label}</Text>
+                  <View style={styles.summaryCardBadge}>
+                    <Text style={styles.summaryCardBadgeText}>×{count}</Text>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
         </View>
-      </View>
+      )}
     </>
   );
 }
