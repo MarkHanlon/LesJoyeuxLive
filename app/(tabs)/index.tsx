@@ -27,6 +27,7 @@ type Member = {
   arriveDate?: string;
   arriveSlot?: string;
   departDate?: string;
+  departSlot?: string;
   aperitif?: string;
   visitUpdatedAt?: string;
 };
@@ -105,9 +106,13 @@ function buildNewsItems(members: Member[], today: string, currentUserId: string)
     });
   }
 
-  // Drink choices for people here or arriving within 14 days
+  // Drink choices — exclude people whose departure today is before dinner
+  const beforeDinner = new Set(['morning', 'lunchtime', 'afternoon']);
+  const hereForEvening = here.filter(m =>
+    today !== m.departDate || !beforeDinner.has(m.departSlot ?? '')
+  );
   const relevant = [
-    ...here,
+    ...hereForEvening,
     ...upcoming.filter(m => daysUntil(m.arriveDate!) <= 14),
   ];
   relevant
