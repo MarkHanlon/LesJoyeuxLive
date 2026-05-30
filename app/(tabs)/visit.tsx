@@ -293,7 +293,7 @@ export default function VisitScreen() {
   const fetchVisit = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await fetch(`/api/visit/${user.id}`);
+      const res = await fetch(`/api/visit/${user.id}`, { headers: { 'x-user-id': user.id } });
       if (res.ok) {
         const d = await res.json();
         const plan: VisitPlan = {

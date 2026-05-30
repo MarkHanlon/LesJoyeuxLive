@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const userId = await storage.getItem(STORAGE_KEY);
       if (userId) {
-        const res = await fetch(`/api/status/${userId}`);
+        const res = await fetch(`/api/status/${userId}`, { headers: { 'x-user-id': userId } });
         if (res.ok) {
           setUser(await res.json());
         } else {
@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function refreshStatus() {
     if (!user) return;
     try {
-      const res = await fetch(`/api/status/${user.id}`);
+      const res = await fetch(`/api/status/${user.id}`, { headers: { 'x-user-id': user.id } });
       if (res.ok) setUser(await res.json());
     } catch {
       // Silently ignore polling errors

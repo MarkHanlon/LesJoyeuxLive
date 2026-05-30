@@ -8,6 +8,13 @@ import { sendPushToAdmins, sendPushToAll } from './push/_send';
 const scryptAsync = promisify(scrypt);
 const VALID_SLOTS = ['morning', 'lunchtime', 'afternoon', 'dinnertime', 'evening'];
 const VALID_ROLES = ['guest', 'staff', 'admin'];
+const VALID_DRINKS = new Set([
+  'pastis', 'red_wine', 'white_wine', 'rose', 'gt',
+  'rum_coke', 'vodka_coke', 'gin_orange', 'cuba_libre', 'skinny_bitch',
+  'beer', 'sparkling', 'oj', 'lemonade', 'cola', 'later',
+  // kept for backward-compat display of existing records
+  'kir', 'kir_royale', 'cremant', 'lillet', 'suze',
+]);
 
 async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
@@ -120,6 +127,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // GET|POST /api/visit/:id
     if (seg0 === 'visit' && seg1 && !seg2) {
       const id = seg1;
+      const callerId = req.headers['x-user-id'] as string | undefined;
+      if (!callerId || callerId !== id) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
       if (method === 'GET') {
         const rows = await db`
@@ -150,11 +159,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!VALID_SLOTS.includes(arriveSlot) || !VALID_SLOTS.includes(departSlot))
           return res.status(400).json({ error: 'Invalid time slot' });
         if (departDate < arriveDate) return res.status(400).json({ error: 'Departure must be on or after arrival' });
-        const aperitifVal    = typeof aperitif    === 'string' && aperitif    ? aperitif    : null;
-        const pickupTimeVal  = typeof pickupTime  === 'string' && pickupTime  ? pickupTime  : null;
-        const pickupFromVal  = typeof pickupFrom  === 'string' && pickupFrom  ? pickupFrom  : null;
-        const dropoffTimeVal = typeof dropoffTime === 'string' && dropoffTime ? dropoffTime : null;
-        const dropoffToVal   = typeof dropoffTo   === 'string' && dropoffTo   ? dropoffTo   : null;
+        const aperitifVal    = typeof aperitif === 'string' && VALID_DRINKS.has(aperitif) ? aperitif : null;
+        const pickupTimeVal  = typeof pickupTime  === 'string' && /^\d{2}:\d{2}$/.test(pickupTime)  ? pickupTime  : null;
+        const pickupFromVal  = typeof pickupFrom  === 'string' && pickupFrom.length  <= 200 ? pickupFrom.trim()  || null : null;
+        const dropoffTimeVal = typeof dropoffTime === 'string' && /^\d{2}:\d{2}$/.test(dropoffTime) ? dropoffTime : null;
+        const dropoffToVal   = typeof dropoffTo   === 'string' && dropoffTo.length   <= 200 ? dropoffTo.trim()   || null : null;
         const [row] = await db`
           INSERT INTO visits (user_id, arrive_date, arrive_slot, save_lunch, save_dinner, depart_date, depart_slot, aperitif,
                               pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to)
@@ -211,9 +220,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
-    // GET /api/status/:id
+    // GET /api/status/:id  — caller must present their own id; used by AuthContext on startup
     if (seg0 === 'status' && seg1 && !seg2) {
       if (method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+      const requesterId = req.headers['x-user-id'] as string | undefined;
+      if (!requesterId || requesterId !== seg1) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
       const [user] = await db`
         SELECT id, name, status, is_admin AS "isAdmin", avatar
@@ -302,7 +313,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST /api/push/subscribe
     if (seg0 === 'push' && seg1 === 'subscribe' && !seg2) {
       if (method !== 'POST') return res.status(405).end();
+      const callerId = req.headers['x-user-id'] as string | undefined;
       const { userId, subscription } = req.body ?? {};
+      if (!callerId || callerId !== userId) return res.status(401).json({ error: 'Unauthorized' });
       if (
         !userId || typeof userId !== 'string' ||
         !subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth
@@ -564,9 +577,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body     TEXT        NOT NULL
         )
       `;
-      if (req.query.reset === 'true') {
-        await db`TRUNCATE push_subscriptions, visits, users RESTART IDENTITY CASCADE`;
-      }
       return res.status(200).json({ ok: true, message: 'Database ready' });
     }
 
@@ -576,7 +586,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = req.headers['x-user-id'] as string | undefined;
       if (!userId || userId !== seg1) return res.status(401).json({ error: 'Unauthorized' });
       const { avatar } = req.body ?? {};
-      if (typeof avatar !== 'string' || !avatar.startsWith('data:image/'))
+      const SAFE_IMAGE_PREFIXES = ['data:image/jpeg', 'data:image/png', 'data:image/webp'];
+      if (typeof avatar !== 'string' || !SAFE_IMAGE_PREFIXES.some(p => avatar.startsWith(p)))
         return res.status(400).json({ error: 'Invalid avatar data' });
       if (avatar.length > 200_000)
         return res.status(400).json({ error: 'Image too large' });
@@ -586,12 +597,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
-    return res.status(404).json({
-      error: 'Not found',
-      debug: { method, rawUrl: req.url, segments },
-    });
+    return res.status(404).json({ error: 'Not found' });
   } catch (err: any) {
     console.error(JSON.stringify({ _api: true, error: err.message, stack: err.stack, method, rawUrl: req.url, segments }));
-    return res.status(500).json({ error: err.message, debug: { method, rawUrl: req.url, segments } });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
