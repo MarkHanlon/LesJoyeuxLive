@@ -114,6 +114,7 @@ type FamilyMember = {
   dropoffNeeded?: boolean | null;
   dropoffTime?: string | null;
   dropoffTo?: string | null;
+  isTest?: boolean | null;
 };
 
 type ChateauEvent = {
@@ -559,6 +560,9 @@ function MemberCard({
         <View style={styles.memberInfo}>
           <View style={styles.memberNameRow}>
             <Text style={styles.memberName}>{member.name}</Text>
+            {member.isTest && (
+              <View style={styles.testBadge}><Text style={styles.testBadgeText}>test</Text></View>
+            )}
             {managing && (
               <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border }]}>
                 <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
@@ -760,6 +764,49 @@ export default function FamilyScreen() {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [testDataMessage, setTestDataMessage] = useState<string | null>(null);
+
+  async function seedTestUsers() {
+    if (!user) return;
+    setIsSeeding(true);
+    setTestDataMessage(null);
+    try {
+      const res = await fetch('/api/admin/test-users', { method: 'POST', headers: { 'x-admin-id': user.id } });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setTestDataMessage(`Created ${body.created} test users ✓`);
+        await fetchAll(true);
+      } else {
+        setTestDataMessage(body.error ?? `Error ${res.status}`);
+      }
+    } catch (e: any) {
+      setTestDataMessage(e?.message ?? 'Network error');
+    } finally {
+      setIsSeeding(false);
+    }
+  }
+
+  async function clearTestUsers() {
+    if (!user) return;
+    setIsClearing(true);
+    setTestDataMessage(null);
+    try {
+      const res = await fetch('/api/admin/test-users', { method: 'DELETE', headers: { 'x-admin-id': user.id } });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setTestDataMessage(`Removed ${body.deleted ?? '?'} test users ✓`);
+        await fetchAll(true);
+      } else {
+        setTestDataMessage(body.error ?? `Error ${res.status}`);
+      }
+    } catch (e: any) {
+      setTestDataMessage(e?.message ?? 'Network error');
+    } finally {
+      setIsClearing(false);
+    }
+  }
 
   async function runMigrate() {
     if (!user) return;
@@ -1064,6 +1111,44 @@ export default function FamilyScreen() {
       {user?.isAdmin && pending.length === 0 && members.length > 0 && (
         <Text style={styles.allClear}>All caught up — no one waiting 🌿</Text>
       )}
+
+      {user?.isAdmin && (() => {
+        const testCount = members.filter(m => m.isTest).length;
+        return (
+          <View style={styles.testDataCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.testDataLabel}>Test users{testCount > 0 ? ` (${testCount} active)` : ''}</Text>
+              {testDataMessage && <Text style={styles.testDataMessage}>{testDataMessage}</Text>}
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.testDataBtn, (isSeeding || isClearing) && styles.testDataBtnBusy]}
+                onPress={seedTestUsers}
+                disabled={isSeeding || isClearing}
+                activeOpacity={0.8}
+              >
+                {isSeeding
+                  ? <ActivityIndicator color="#5C3D2E" size="small" />
+                  : <Text style={styles.testDataBtnText}>Seed</Text>
+                }
+              </TouchableOpacity>
+              {testCount > 0 && (
+                <TouchableOpacity
+                  style={[styles.testDataBtn, styles.testDataClearBtn, (isSeeding || isClearing) && styles.testDataBtnBusy]}
+                  onPress={clearTestUsers}
+                  disabled={isSeeding || isClearing}
+                  activeOpacity={0.8}
+                >
+                  {isClearing
+                    ? <ActivityIndicator color="#C85A2E" size="small" />
+                    : <Text style={[styles.testDataBtnText, { color: '#C85A2E' }]}>Clear</Text>
+                  }
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+      })()}
 
       {user?.isAdmin && (
         <View style={styles.migrateCard}>
@@ -1465,6 +1550,15 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 22, fontFamily: 'Playfair Display, Georgia, serif', fontStyle: 'italic', color: '#1A1209', marginBottom: 8 },
   emptyBody: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', textAlign: 'center', lineHeight: 22 },
   allClear: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', textAlign: 'center', fontStyle: 'italic', marginTop: 6 },
+  testBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: '#E8F4FD', borderWidth: 1, borderColor: '#A8C8E8' },
+  testBadgeText: { fontSize: 9, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#2A6090', letterSpacing: 0.5, textTransform: 'uppercase' as const },
+  testDataCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 24, padding: 14, backgroundColor: '#EDF6FF', borderRadius: 12, borderWidth: 1, borderColor: '#A8C8E8' },
+  testDataLabel: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#2A6090' },
+  testDataMessage: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#2D5A3D', marginTop: 3 },
+  testDataBtn: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 50, borderWidth: 1.5, borderColor: '#A8C8E8', alignItems: 'center' },
+  testDataClearBtn: { borderColor: '#C85A2E' },
+  testDataBtnBusy: { opacity: 0.5 },
+  testDataBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#2A6090' },
   migrateCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 24, marginBottom: 8, padding: 14, backgroundColor: '#FAF4E6', borderRadius: 12, borderWidth: 1, borderColor: '#EDD9A3' },
   migrateLabel: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#8B6245' },
   migrateResult: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', marginTop: 3 },

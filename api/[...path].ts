@@ -99,6 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           u.is_admin                        AS "isAdmin",
           u.avatar                          AS "avatar",
           COALESCE(u.role, 'guest')         AS "role",
+          COALESCE(u.is_test, false)        AS "isTest",
           v.arrive_date::text               AS "arriveDate",
           v.arrive_slot                     AS "arriveSlot",
           v.depart_date::text               AS "departDate",
@@ -494,6 +495,97 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
+    // POST|DELETE /api/admin/test-users
+    if (seg0 === 'admin' && seg1 === 'test-users' && !seg2) {
+      const adminId = req.headers['x-admin-id'] as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+      const db = getDb();
+      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
+      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false`;
+
+      if (method === 'DELETE') {
+        const { count } = (await db`DELETE FROM users WHERE is_test = true RETURNING id`).reduce(
+          (acc: { count: number }) => ({ count: acc.count + 1 }), { count: 0 }
+        );
+        return res.status(200).json({ ok: true, deleted: count });
+      }
+
+      if (method === 'POST') {
+        // Pin hashes that will never be guessable (random salt:hash — test users never log in)
+        const dummyHash = () => `${randomBytes(16).toString('hex')}:${randomBytes(64).toString('hex')}`;
+
+        // addDays helper (date math without Date.now())
+        const addD = (base: string, n: number) => {
+          const d = new Date(base + 'T12:00:00Z');
+          d.setUTCDate(d.getUTCDate() + n);
+          return d.toISOString().slice(0, 10);
+        };
+        const today = (await db`SELECT CURRENT_DATE::text AS d`)[0].d as string;
+
+        type Fixture = {
+          name: string; arriveOffset: number; departOffset: number;
+          arriveSlot: string; departSlot: string; drink: string; role: string;
+          saveLunch?: boolean; saveDinner?: boolean;
+          pickupNeeded?: boolean; pickupTime?: string; pickupFrom?: string;
+          dropoffNeeded?: boolean; dropoffTime?: string; dropoffTo?: string;
+        };
+        const fixtures: Fixture[] = [
+          // Currently here
+          { name: 'Sophie Beaumont',   arriveOffset: -5, departOffset:  2, arriveSlot: 'morning',   departSlot: 'morning',   drink: 'rose',         role: 'guest' },
+          { name: 'Pierre Lefebvre',   arriveOffset: -3, departOffset:  4, arriveSlot: 'afternoon',  departSlot: 'morning',   drink: 'pastis',       role: 'guest' },
+          { name: 'Marie Rousseau',    arriveOffset: -2, departOffset:  5, arriveSlot: 'morning',    departSlot: 'afternoon', drink: 'white_wine',   role: 'staff' },
+          { name: 'Jean-Luc Martin',   arriveOffset: -1, departOffset:  3, arriveSlot: 'lunchtime',  departSlot: 'morning',   drink: 'beer',         role: 'guest', saveLunch: true },
+          { name: 'Isabelle Moreau',   arriveOffset:  0, departOffset:  6, arriveSlot: 'morning',    departSlot: 'morning',   drink: 'gt',           role: 'guest' },
+          { name: 'François Dupont',   arriveOffset:  0, departOffset:  4, arriveSlot: 'afternoon',  departSlot: 'afternoon', drink: 'red_wine',     role: 'guest' },
+          { name: 'Camille Bernard',   arriveOffset:  0, departOffset:  7, arriveSlot: 'dinnertime', departSlot: 'morning',   drink: 'rum_coke',     role: 'guest', saveDinner: true },
+          { name: 'Olivier Petit',     arriveOffset: -4, departOffset:  1, arriveSlot: 'morning',    departSlot: 'morning',   drink: 'sparkling',    role: 'staff' },
+          // Arriving soon
+          { name: 'Émeline Fournier',  arriveOffset:  1, departOffset:  5, arriveSlot: 'morning',    departSlot: 'afternoon', drink: 'cola',         role: 'guest' },
+          { name: 'Hugo Girard',       arriveOffset:  1, departOffset:  4, arriveSlot: 'afternoon',  departSlot: 'morning',   drink: 'vodka_coke',   role: 'guest' },
+          { name: 'Lucie Bonnet',      arriveOffset:  2, departOffset:  6, arriveSlot: 'lunchtime',  departSlot: 'morning',   drink: 'lemonade',     role: 'guest', saveLunch: true },
+          { name: 'Thomas Morel',      arriveOffset:  2, departOffset:  5, arriveSlot: 'morning',    departSlot: 'afternoon', drink: 'gin_orange',   role: 'guest' },
+          { name: 'Élise Lambert',     arriveOffset:  3, departOffset:  8, arriveSlot: 'dinnertime', departSlot: 'morning',   drink: 'cuba_libre',   role: 'guest', saveDinner: true },
+          { name: 'Nicolas Fontaine',  arriveOffset:  4, departOffset:  9, arriveSlot: 'evening',    departSlot: 'morning',   drink: 'skinny_bitch', role: 'guest', saveDinner: true, pickupNeeded: true,  pickupTime: '16:30',  pickupFrom: 'Carcassonne Airport' },
+          { name: 'Audrey Leroy',      arriveOffset:  5, departOffset: 10, arriveSlot: 'morning',    departSlot: 'morning',   drink: 'oj',           role: 'guest' },
+          // Further out
+          { name: 'Baptiste Roux',     arriveOffset:  8, departOffset: 14, arriveSlot: 'afternoon',  departSlot: 'afternoon', drink: 'rose',         role: 'guest', dropoffNeeded: true, dropoffTime: '09:00', dropoffTo: 'Toulouse Airport' },
+          { name: 'Margot Leclerc',    arriveOffset: 10, departOffset: 17, arriveSlot: 'morning',    departSlot: 'morning',   drink: 'pastis',       role: 'guest' },
+          { name: 'Romain Mercier',    arriveOffset: 14, departOffset: 21, arriveSlot: 'afternoon',  departSlot: 'morning',   drink: 'red_wine',     role: 'guest' },
+          // Already left
+          { name: 'Sandrine Garnier',  arriveOffset: -8, departOffset: -1, arriveSlot: 'morning',    departSlot: 'afternoon', drink: 'white_wine',   role: 'guest' },
+          { name: 'Christophe Faure',  arriveOffset:-10, departOffset: -2, arriveSlot: 'afternoon',  departSlot: 'morning',   drink: 'beer',         role: 'guest' },
+        ];
+
+        let created = 0;
+        for (const f of fixtures) {
+          const [newUser] = await db`
+            INSERT INTO users (name, pin_hash, status, is_admin, role, is_test)
+            VALUES (${f.name}, ${dummyHash()}, 'approved', false, ${f.role}, true)
+            ON CONFLICT DO NOTHING
+            RETURNING id
+          `;
+          if (!newUser) continue;
+          const arriveDate = addD(today, f.arriveOffset);
+          const departDate = addD(today, f.departOffset);
+          await db`
+            INSERT INTO visits (user_id, arrive_date, arrive_slot, save_lunch, save_dinner,
+                                depart_date, depart_slot, aperitif,
+                                pickup_needed, pickup_time, pickup_from,
+                                dropoff_needed, dropoff_time, dropoff_to)
+            VALUES (${newUser.id}, ${arriveDate}, ${f.arriveSlot}, ${!!f.saveLunch}, ${!!f.saveDinner},
+                    ${departDate}, ${f.departSlot}, ${f.drink},
+                    ${!!f.pickupNeeded},  ${f.pickupTime  ?? null}, ${f.pickupFrom  ?? null},
+                    ${!!f.dropoffNeeded}, ${f.dropoffTime ?? null}, ${f.dropoffTo   ?? null})
+          `;
+          created++;
+        }
+        return res.status(200).json({ ok: true, created });
+      }
+
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     // POST /api/migrate
     if (seg0 === 'migrate' && !seg1) {
       if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -521,7 +613,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await db`ALTER TABLE users ADD COLUMN pin_hash TEXT`;
         await db`TRUNCATE users`;
       }
-      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'guest'`;
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS role    TEXT    NOT NULL DEFAULT 'guest'`;
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false`;
       await db`UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'guest'`;
       await db`
         CREATE TABLE IF NOT EXISTS visits (
