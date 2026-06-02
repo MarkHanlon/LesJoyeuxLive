@@ -339,7 +339,7 @@ export default function VisitScreen() {
     try {
       const res = await fetch(`/api/visit/${user.id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
         body: JSON.stringify({
           arriveDate:    form.arriveDate,
           arriveSlot:    form.arriveSlot,
