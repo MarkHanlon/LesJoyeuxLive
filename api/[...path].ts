@@ -62,8 +62,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `;
       if (existing.length > 0) {
         const u = existing[0];
-        if (!u.pin_hash || !(await verifyPin(pin, u.pin_hash)))
+        const MAX_ATTEMPTS = 5;
+        const LOCKOUT_SECONDS = 15 * 60;
+        // Lockout check — degrades gracefully if the columns don't exist yet (pre-migration).
+        try {
+          const [lock] = await db`SELECT pin_locked_until AS "lockedUntil" FROM users WHERE id = ${u.id}`;
+          if (lock?.lockedUntil && new Date(lock.lockedUntil).getTime() > Date.now())
+            return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+        } catch { /* lockout columns not migrated yet — skip */ }
+
+        if (!u.pin_hash || !(await verifyPin(pin, u.pin_hash))) {
+          // Increment failed attempts; lock the account once the threshold is reached.
+          await db`
+            UPDATE users
+            SET failed_pin_attempts = failed_pin_attempts + 1,
+                pin_locked_until = CASE WHEN failed_pin_attempts + 1 >= ${MAX_ATTEMPTS}
+                                        THEN NOW() + make_interval(secs => ${LOCKOUT_SECONDS})
+                                        ELSE pin_locked_until END
+            WHERE id = ${u.id}
+          `.catch(() => {});
           return res.status(401).json({ error: 'Wrong PIN for this name' });
+        }
+        await db`UPDATE users SET failed_pin_attempts = 0, pin_locked_until = NULL WHERE id = ${u.id}`.catch(() => {});
         return res.status(200).json({ id: u.id, name: u.name, status: u.status, isAdmin: u.isAdmin });
       }
       const [{ count }] = await db`SELECT COUNT(*) AS count FROM users`;
@@ -199,7 +219,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = req.headers['x-user-id'] as string | undefined;
       if (!userId || userId !== seg2) return res.status(401).json({ error: 'Unauthorized' });
       const { aperitif, tonight } = req.body ?? {};
-      if (typeof aperitif !== 'string' || !aperitif)
+      if (typeof aperitif !== 'string' || !VALID_DRINKS.has(aperitif))
         return res.status(400).json({ error: 'aperitif required' });
       const db = getDb();
       if (tonight) {
@@ -426,9 +446,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
         const { title, body } = req.body ?? {};
-        if (!title) return res.status(400).json({ error: 'title required' });
-        await sendPushToAll(bellDb, { title, body: body ?? '', url: '/' });
-        const [bell] = await bellDb`INSERT INTO bells (sent_by, title, body) VALUES (${bellUserId}, ${title}, ${body ?? ''}) RETURNING sent_at`;
+        if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' });
+        const titleVal = title.slice(0, 100);
+        const bodyVal  = (typeof body === 'string' ? body : '').slice(0, 200);
+        await sendPushToAll(bellDb, { title: titleVal, body: bodyVal, url: '/' });
+        const [bell] = await bellDb`INSERT INTO bells (sent_by, title, body) VALUES (${bellUserId}, ${titleVal}, ${bodyVal}) RETURNING sent_at`;
         return res.status(200).json({ ok: true, sentAt: bell.sent_at });
       }
 
@@ -473,9 +495,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { date, title, time } = req.body ?? {};
         if (!date || typeof title !== 'string' || !title.trim())
           return res.status(400).json({ error: 'date and title required' });
+        const titleVal = title.trim().slice(0, 120);
+        const timeVal  = typeof time === 'string' && /^\d{2}:\d{2}$/.test(time) ? time : null;
         const [ev] = await db`
           INSERT INTO events (event_date, title, event_time, created_by)
-          VALUES (${date}::date, ${title.trim()}, ${time ?? null}, ${adminId})
+          VALUES (${date}::date, ${titleVal}, ${timeVal}, ${adminId})
           RETURNING id, event_date::text AS "eventDate", title, event_time AS "eventTime", created_at AS "createdAt"
         `;
         return res.status(201).json(ev);
@@ -615,6 +639,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS role    TEXT    NOT NULL DEFAULT 'guest'`;
       await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false`;
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_pin_attempts INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_locked_until TIMESTAMPTZ`;
       await db`UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'guest'`;
       await db`
         CREATE TABLE IF NOT EXISTS visits (

@@ -187,6 +187,11 @@ function getLunchStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'n
   return 'yes';
 }
 
+// Escape user-controlled values before interpolating into the print HTML documents.
+const escapeHtml = (s: string) =>
+  String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
 function printDinnerGrid(members: FamilyMember[]) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
   const weekDates = currentWeekDates();
@@ -208,7 +213,7 @@ function printDinnerGrid(members: FamilyMember[]) {
         if (status === 'keep') return `<td class="cell-keep"><span class="keep-label">K</span></td>`;
         return `<td class="cell-no"></td>`;
       }).join('');
-      return `<tr><td class="name-cell">${member.name}</td>${cells}</tr>`;
+      return `<tr><td class="name-cell">${escapeHtml(member.name)}</td>${cells}</tr>`;
     }).join('');
   }
 
@@ -297,7 +302,7 @@ function printAperitifs(rows: [string, number][], hereCount: number) {
     const isUndecided = key === '__undecided__';
     const icon  = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
     const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
-    return `<tr><td class="icon">${icon}</td><td class="drink">${label}</td><td class="count">\xd7${count}</td></tr>`;
+    return `<tr><td class="icon">${icon}</td><td class="drink">${escapeHtml(label)}</td><td class="count">\xd7${count}</td></tr>`;
   }).join('');
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <title>Tonight's Aperitifs — Les Joyeux</title><style>
