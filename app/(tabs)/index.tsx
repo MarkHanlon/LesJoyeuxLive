@@ -191,7 +191,7 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => {
     if (!user) return;
-    fetch(`/api/visit/${user.id}`)
+    fetch(`/api/visit/${user.id}`, { headers: { 'x-user-id': user.id } })
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         setVisit(d?.arrive_date ? {
