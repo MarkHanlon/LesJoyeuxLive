@@ -17,6 +17,7 @@ const PHOTOS = [
   { uri: '/john-tutu.jpg' },
 ];
 
+// Deploy check
 const HOLD_MS = 3000;
 const FADE_MS = 700;
 const NEWS_ITEM_H = 60;
