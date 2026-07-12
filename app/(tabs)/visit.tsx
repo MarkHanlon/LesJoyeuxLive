@@ -11,9 +11,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { avatarColor, initials } from '../../utils/ui';
+
+const VISIT_REFRESH_MS = 30000;
 
 type TimeSlot = 'morning' | 'lunchtime' | 'afternoon' | 'dinnertime' | 'evening';
 
@@ -320,7 +322,8 @@ export default function VisitScreen() {
     }
   }, [user]);
 
-  useFocusEffect(fetchVisit);
+  // Pause auto-refresh while the user is mid-edit so a poll can't wipe unsaved input.
+  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving);
 
   function updateForm(partial: Partial<VisitPlan>) {
     setForm(prev => {

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
 import { daysUntil, formatDate, slotLabel, todayStr } from '../../utils/date';
+
+const HOME_REFRESH_MS = 30000;
 
 const PHOTOS = [
   { uri: '/cheers.JPG' },
@@ -14,7 +17,6 @@ const PHOTOS = [
   { uri: '/john-tutu.jpg' },
 ];
 
-// Deploy check
 const HOLD_MS = 3000;
 const FADE_MS = 700;
 const NEWS_ITEM_H = 60;
@@ -190,7 +192,7 @@ export default function HomeScreen() {
   const newsScrollRef = useRef<ScrollView>(null);
   const newsScrollYRef = useRef(0);
 
-  useFocusEffect(useCallback(() => {
+  const refresh = useCallback(() => {
     if (!user) return;
     fetch(`/api/visit/${user.id}`, { headers: { 'x-user-id': user.id } })
       .then(r => r.ok ? r.json() : null)
@@ -206,7 +208,9 @@ export default function HomeScreen() {
       .then(r => r.ok ? r.json() : [])
       .then(setMembers)
       .catch(() => {});
-  }, [user]));
+  }, [user]);
+
+  useAutoRefresh(refresh, HOME_REFRESH_MS);
 
   // Auto-advance photo ticker
   useEffect(() => {

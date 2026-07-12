@@ -9,12 +9,22 @@ self.addEventListener('push', (event) => {
   if (!event.data) return;
   const { title, body, url } = event.data.json();
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      data: { url: url || '/' },
-    })
+    Promise.all([
+      self.registration.showNotification(title, {
+        body,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        data: { url: url || '/' },
+      }),
+      // Nudge any open app windows to re-fetch immediately (Layer 2 instant refresh).
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((windowClients) => {
+          for (const client of windowClients) {
+            client.postMessage({ type: 'refresh', reason: 'push', url: url || '/' });
+          }
+        }),
+    ])
   );
 });
 

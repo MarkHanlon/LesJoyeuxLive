@@ -15,12 +15,16 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
 import { addDays, datesBetween, daysUntil, formatDate, formatDateLong, slotLabel, todayStr } from '../../utils/date';
 import { avatarColor, initials } from '../../utils/ui';
 
 const ADMIN_DAYS_BEFORE = 7;
 const ADMIN_DAYS_AFTER = 30;
+
+// Pending approvals are the most time-sensitive, so the Family tab polls a little faster.
+const FAMILY_REFRESH_MS = 20000;
 
 function NotificationBanner({ userId }: { userId: string }) {
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
@@ -887,7 +891,7 @@ export default function FamilyScreen() {
     }
   }, [user]);
 
-  useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
+  useAutoRefresh(fetchAll, FAMILY_REFRESH_MS);
 
   async function reject(userId: string) {
     if (!user) return;
