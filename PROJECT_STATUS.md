@@ -1,12 +1,14 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-05-03 (Build stamp, THEME build fix, aperitif labels, Events tab debug)
+**Last Updated**: 2026-07-13 (Auto-refresh across screens; Android Events scroll-jump fix)
 
 ## Version Testing Log
 
 | Build stamp (live site) | Commit | Features tested | Result |
 |---|---|---|---|
 | _(pending — first build with stamp)_ | 5ff1dec | Build stamp, THEME fix, aperitif labels, Events tab date diagnostic | 🕐 Not yet tested |
+| _(pending)_ | 86f8293 | Auto-refresh (focus + interval + foreground + push nudge) | 🕐 Not yet tested |
+| _(pending)_ | 20c404c | Android Events scroll-jump fix | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 
@@ -115,6 +117,12 @@ _Nothing actively in progress — ready for next feature._
 - [x] **Build error fixed** — `THEME` constant was missing in `InstallPrompt.web.tsx`; caused all Vercel deployments since last night to fail with `ReferenceError: THEME is not defined`
 - [x] **Aperitif display names fixed** — home screen news feed was showing raw DB keys (`gt`, `red_wine`) instead of labels; fixed by aligning `DRINK_EMOJI`/`DRINK_LABELS` in `index.tsx` with DB key format from `admin.tsx`
 
+### Auto-Refresh & Live Updates (2026-07-13)
+- [x] **`useAutoRefresh` hook** (`hooks/useAutoRefresh.ts`) — replaced the plain `useFocusEffect` refetch on all three tabs. Re-fetches on focus, on an interval while the screen is focused **and** visible (Family 20s, Home/Visit 30s), and instantly when the PWA returns to the foreground, the window regains focus, or the network reconnects. Backgrounded/hidden screens do not poll (saves battery + DB calls).
+- [x] **Mid-edit guard** — My Visit passes `enabled: false` to the hook while editing / changing a drink / saving, so a background poll can never clobber unsaved form input.
+- [x] **Push-triggered instant refresh (Layer 2)** — `public/sw.js` now `postMessage`s all open app windows on `push`; `useAutoRefresh` listens for the `{ type: 'refresh' }` message and re-fetches. Signups/approvals refresh the open screen in ~1s, with polling as the backstop. Fixes the reported bug where an admin's **pending-approvals list didn't update without closing/reopening the app** (PR #10, commit `86f8293`).
+- [x] **Android Events scroll-jump fix** — the 20s Family poll used to toggle `eventsLoading` on every refresh, swapping the Events `ScrollView` content for a spinner and back; the content-height collapse reset Android scroll to the top (iOS unaffected). Fixed by gating the spinner behind a first-load `useRef` (`eventsLoadedRef`) in `admin.tsx` so background polls refresh the list silently and preserve scroll position (PR #11, commit `20c404c`). See the Auto-Refresh Gotcha note below.
+
 ### Family Tab Improvements (2026-04-30)
 - [x] **Tonight's Aperitifs card** — summary card at the top of the Family tab showing everyone's drink choice for tonight; only visible when at least one person is visiting or arriving today
 - [x] **Manage toggle** — admin-only "Manage" button in the Family tab header switches between the normal member view and the admin management view (approvals + remove); simplifies the default view for admins
@@ -196,7 +204,7 @@ _Nothing actively in progress — ready for next feature._
 ---
 
 ## 🎯 Current Priority
-**Latest**: ✅ Events tab with arrivals/departures; print aperitifs; iOS PWA fixes; Playwright testing infrastructure added.
+**Latest**: ✅ Timely in-app auto-refresh across all tabs (focus + interval + foreground + push nudge); fixed the Android Events-list scroll-jump caused by a loading spinner toggling on background polls.
 
 **Next up:**
 - Run `vercel env pull .env.local` + `npx playwright install chromium` to enable closed-loop E2E testing
@@ -214,6 +222,11 @@ _Nothing actively in progress — ready for next feature._
 - React Native components should NEVER import database clients directly
 - Environment variables only accessible in API routes
 - See `SECURITY.md` for detailed patterns
+
+### Auto-Refresh Gotcha (background polls must be silent)
+- Any screen wired to `useAutoRefresh` (or otherwise polling) **must not toggle a loading spinner, unmount, or otherwise collapse list content on a background poll** — only on the first load or a manual pull-to-refresh.
+- Why: on **Android**, when a `ScrollView`/`FlatList`'s content height shrinks below the current scroll offset (e.g. swapping a long list for a small spinner), the platform clamps the scroll position back to the top. **iOS tolerates it**, so this bug is invisible on iPhone and only shows on Android.
+- Precedent: the Events list in `app/(tabs)/admin.tsx` hit exactly this — fixed by gating `setEventsLoading(true)` behind a first-load `useRef` so polls update the list in place (stable per-item keys, unchanged height). Follow the same pattern for any future auto-refreshing list.
 
 ### Known Issues
 - `app.json` has two invalid schema fields flagged by `expo-doctor`: `newArchEnabled` (top-level) and `android.edgeToEdgeEnabled` — safe to remove on next cleanup pass
