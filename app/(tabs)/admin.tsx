@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -753,6 +753,9 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
 export default function FamilyScreen() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('people');
+  // Show the Events spinner only on first load — never on a background poll,
+  // which would collapse the list height and reset Android scroll to the top.
+  const eventsLoadedRef = useRef(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [pending, setPending] = useState<PendingUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -867,7 +870,7 @@ export default function FamilyScreen() {
       const fetchFrom = isAdmin ? addDays(anchor, -ADMIN_DAYS_BEFORE) : (myMember?.arriveDate ? String(myMember.arriveDate).slice(0, 10) : null);
       const fetchTo   = isAdmin ? addDays(anchor, ADMIN_DAYS_AFTER) : (myMember?.departDate ? String(myMember.departDate).slice(0, 10) : null);
       if (fetchFrom && fetchTo) {
-        setEventsLoading(true);
+        if (!eventsLoadedRef.current) setEventsLoading(true);
         try {
           const evRes = await fetch(
             `/api/events?from=${fetchFrom}&to=${fetchTo}`,
@@ -879,9 +882,11 @@ export default function FamilyScreen() {
           }
         } finally {
           setEventsLoading(false);
+          eventsLoadedRef.current = true;
         }
       } else {
         setEvents([]);
+        eventsLoadedRef.current = true;
       }
     } catch (e: any) {
       setFetchError(e.message ?? 'Network error');
