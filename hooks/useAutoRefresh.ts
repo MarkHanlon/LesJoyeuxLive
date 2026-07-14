@@ -18,15 +18,19 @@ import { useFocusEffect } from 'expo-router';
  *
  * Pass `enabled: false` to pause refreshing (e.g. while a form is mid-edit) so a
  * poll can never clobber unsaved input.
+ *
+ * `refresh` MUST be memoized (e.g. `useCallback(fn, [user])`). The focus effect
+ * re-runs whenever `refresh` changes identity, which is how a screen that mounts
+ * before `user` is ready (Home on cold start) fetches the instant auth resolves.
+ * An unmemoized `refresh` would re-run the effect every render.
  */
 export function useAutoRefresh(
   refresh: () => void,
   intervalMs: number,
   enabled: boolean = true,
 ) {
-  // Hold the latest values in refs so listeners don't need re-subscribing each render.
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
+  // enabled is read through a ref so frequent toggles (e.g. per keystroke while
+  // editing) don't tear down and re-subscribe the listeners / interval.
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
@@ -37,7 +41,7 @@ export function useAutoRefresh(
         !isWeb || typeof document === 'undefined' || document.visibilityState === 'visible';
 
       const run = () => {
-        if (enabledRef.current) refreshRef.current();
+        if (enabledRef.current) refresh();
       };
 
       // Fetch on focus.
@@ -81,6 +85,6 @@ export function useAutoRefresh(
       }
 
       return () => { stopTimer(); cleanupWeb(); };
-    }, [intervalMs]),
+    }, [refresh, intervalMs]),
   );
 }
