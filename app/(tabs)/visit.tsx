@@ -70,7 +70,10 @@ const SLOTS: { key: TimeSlot; label: string; hint: string }[] = [
   { key: 'evening',    label: 'Evening',     hint: 'after dinner' },
 ];
 
+type VisitStatus = 'coming' | 'not_coming' | 'undecided';
+
 type VisitPlan = {
+  status: VisitStatus;
   arriveDate: string;   // YYYY-MM-DD
   arriveSlot: TimeSlot;
   saveLunch: boolean;
@@ -115,7 +118,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '' };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '' };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -299,12 +302,13 @@ export default function VisitScreen() {
       if (res.ok) {
         const d = await res.json();
         const plan: VisitPlan = {
-          arriveDate:      String(d.arrive_date).slice(0, 10),
-          arriveSlot:      d.arrive_slot as TimeSlot,
+          status:          (d.status as VisitStatus) ?? 'coming',
+          arriveDate:      d.arrive_date ? String(d.arrive_date).slice(0, 10) : defaultPlan().arriveDate,
+          arriveSlot:      (d.arrive_slot as TimeSlot) ?? 'afternoon',
           saveLunch:       !!d.save_lunch,
           saveDinner:      !!d.save_dinner,
-          departDate:      String(d.depart_date).slice(0, 10),
-          departSlot:      d.depart_slot as TimeSlot,
+          departDate:      d.depart_date ? String(d.depart_date).slice(0, 10) : defaultPlan().departDate,
+          departSlot:      (d.depart_slot as TimeSlot) ?? 'morning',
           aperitif:        (d.aperitif as DrinkKey) ?? null,
           tonightAperitif: (d.tonight_aperitif as DrinkKey) ?? null,
           pickupNeeded:    !!d.pickup_needed,
@@ -344,6 +348,7 @@ export default function VisitScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
         body: JSON.stringify({
+          status:        form.status,
           arriveDate:    form.arriveDate,
           arriveSlot:    form.arriveSlot,
           saveLunch:     form.saveLunch,
@@ -373,6 +378,13 @@ export default function VisitScreen() {
     setIsEditing(false);
   }
 
+  // Tap a status option: activate it, or return to "coming" if it's already active.
+  // From the read-only summary, drop into edit mode so the Save button is visible.
+  function selectStatus(next: VisitStatus) {
+    updateForm({ status: form.status === next ? 'coming' : next });
+    if (saved && !isEditing) setIsEditing(true);
+  }
+
   async function saveQuickDrink(tonight: boolean) {
     if (!user || !pendingDrink) return;
     setIsSavingDrink(true);
@@ -397,7 +409,8 @@ export default function VisitScreen() {
   }
 
   const today = todayStr();
-  const isStaying = !!(saved && today >= saved.arriveDate && today <= saved.departDate);
+  const year = new Date().getFullYear();
+  const isStaying = !!(saved && saved.status === 'coming' && today >= saved.arriveDate && today <= saved.departDate);
   // The drink to display: tonight override takes precedence while staying
   const effectiveDrink = isStaying && saved?.tonightAperitif ? saved.tonightAperitif : saved?.aperitif ?? null;
   const hasTonightOverride = isStaying && !!saved?.tonightAperitif;
@@ -431,7 +444,7 @@ export default function VisitScreen() {
             }
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headline}>My Visit</Text>
+            <Text style={styles.headline}>My {year} Visit</Text>
             <Text style={styles.subline}>
               {saved ? 'Your current visit plan' : "Let the family know you're coming"}
             </Text>
@@ -444,8 +457,43 @@ export default function VisitScreen() {
         </View>
       </View>
 
+      {/* ── Visit status options ── */}
+      <View style={styles.statusRow}>
+        <TouchableOpacity
+          style={[styles.statusCard, form.status === 'not_coming' && styles.statusCardActive]}
+          onPress={() => selectStatus('not_coming')}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.statusCardText, form.status === 'not_coming' && styles.statusCardTextActive]}>
+            🚫  Not coming this year
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.statusCard, form.status === 'undecided' && styles.statusCardActive]}
+          onPress={() => selectStatus('undecided')}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.statusCardText, form.status === 'undecided' && styles.statusCardTextActive]}>
+            🤔  Not finalised yet
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {!showForm && saved ? (
         /* ── View mode ── */
+        saved.status !== 'coming' ? (
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryEyebrow}>
+              {saved.status === 'not_coming' ? 'NOT COMING THIS YEAR' : 'PLANS NOT FINALISED'}
+            </Text>
+            <Text style={styles.statusSummaryText}>
+              {saved.status === 'not_coming'
+                ? "You've let the family know you're not coming this year."
+                : "You're still deciding — no dates set yet."}
+            </Text>
+            <Text style={styles.statusSummaryHint}>Tap an option above to change this.</Text>
+          </View>
+        ) : (
         <View style={styles.summaryCard}>
           <View style={styles.summaryBlock}>
             <Text style={styles.summaryEyebrow}>Arriving</Text>
@@ -560,9 +608,22 @@ export default function VisitScreen() {
             )}
           </View>
         </View>
+        )
       ) : (
         /* ── Edit / form mode ── */
         <>
+          {form.status !== 'coming' && (
+            <Text style={styles.statusFormNote}>
+              {form.status === 'not_coming'
+                ? "You're marked as not coming this year — your dates below are disabled. Tap the option again to plan a visit."
+                : "You're still deciding — your dates below are disabled until you're ready. Tap the option again to plan a visit."}
+            </Text>
+          )}
+
+          <View
+            style={form.status !== 'coming' ? styles.formDisabled : undefined}
+            pointerEvents={form.status !== 'coming' ? 'none' : 'auto'}
+          >
           {/* Arrival section */}
           <View style={styles.section}>
             <Text style={styles.sectionEyebrow}>ARRIVING ON</Text>
@@ -722,6 +783,7 @@ export default function VisitScreen() {
               </View>
             )}
           </View>
+          </View>
 
           {/* Buttons */}
           <View style={styles.buttonRow}>
@@ -805,6 +867,65 @@ const styles = StyleSheet.create({
     color: '#C85A2E',
     textDecorationLine: 'underline',
     paddingBottom: 4,
+  },
+
+  // Visit status options
+  statusRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 20,
+  },
+  statusCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#EDD9A3',
+    backgroundColor: '#FAF4E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusCardActive: {
+    borderColor: '#C85A2E',
+    backgroundColor: '#FDF8EF',
+  },
+  statusCardText: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#5C3D2E',
+    textAlign: 'center',
+  },
+  statusCardTextActive: {
+    color: '#C85A2E',
+  },
+  statusSummaryText: {
+    fontSize: 17,
+    fontFamily: 'Playfair Display, Georgia, serif',
+    fontStyle: 'italic',
+    color: '#1A1209',
+    lineHeight: 26,
+    marginTop: 2,
+  },
+  statusSummaryHint: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245',
+    marginTop: 10,
+  },
+  statusFormNote: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#8B6245',
+    fontStyle: 'italic',
+    marginHorizontal: 20,
+    marginTop: 18,
+    lineHeight: 20,
+  },
+  formDisabled: {
+    opacity: 0.4,
   },
 
   // Summary (view mode)

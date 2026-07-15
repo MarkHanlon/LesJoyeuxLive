@@ -15,6 +15,7 @@ const VALID_DRINKS = new Set([
   // kept for backward-compat display of existing records
   'kir', 'kir_royale', 'cremant', 'lillet', 'suze',
 ]);
+const VALID_VISIT_STATUS = new Set(['coming', 'not_coming', 'undecided']);
 
 async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
@@ -136,6 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           v.dropoff_needed                  AS "dropoffNeeded",
           v.dropoff_time                    AS "dropoffTime",
           v.dropoff_to                      AS "dropoffTo",
+          COALESCE(v.status, 'coming')      AS "visitStatus",
           v.updated_at                      AS "visitUpdatedAt"
         FROM  users u
         LEFT  JOIN visits v ON v.user_id = u.id
@@ -167,7 +169,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             pickup_from,
             dropoff_needed,
             dropoff_time,
-            dropoff_to
+            dropoff_to,
+            COALESCE(status, 'coming') AS status
           FROM visits WHERE user_id = ${id} LIMIT 1
         `;
         if (rows.length === 0) return res.status(404).json({ visit: null });
@@ -175,21 +178,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (method === 'POST') {
         const { arriveDate, arriveSlot, saveLunch, saveDinner, departDate, departSlot, aperitif,
-                pickupNeeded, pickupTime, pickupFrom, dropoffNeeded, dropoffTime, dropoffTo } = req.body ?? {};
-        if (!arriveDate || !departDate) return res.status(400).json({ error: 'Dates required' });
-        if (!VALID_SLOTS.includes(arriveSlot) || !VALID_SLOTS.includes(departSlot))
-          return res.status(400).json({ error: 'Invalid time slot' });
-        if (departDate < arriveDate) return res.status(400).json({ error: 'Departure must be on or after arrival' });
-        const aperitifVal    = typeof aperitif === 'string' && VALID_DRINKS.has(aperitif) ? aperitif : null;
-        const pickupTimeVal  = typeof pickupTime  === 'string' && /^\d{2}:\d{2}$/.test(pickupTime)  ? pickupTime  : null;
-        const pickupFromVal  = typeof pickupFrom  === 'string' && pickupFrom.length  <= 200 ? pickupFrom.trim()  || null : null;
-        const dropoffTimeVal = typeof dropoffTime === 'string' && /^\d{2}:\d{2}$/.test(dropoffTime) ? dropoffTime : null;
-        const dropoffToVal   = typeof dropoffTo   === 'string' && dropoffTo.length   <= 200 ? dropoffTo.trim()   || null : null;
+                pickupNeeded, pickupTime, pickupFrom, dropoffNeeded, dropoffTime, dropoffTo,
+                status } = req.body ?? {};
+        const statusVal = typeof status === 'string' && VALID_VISIT_STATUS.has(status) ? status : 'coming';
+        const coming = statusVal === 'coming';
+        // For a "coming" visit, dates are required and validated as before.
+        // Otherwise (not_coming / undecided) the visit carries no dates — everything is nulled.
+        if (coming) {
+          if (!arriveDate || !departDate) return res.status(400).json({ error: 'Dates required' });
+          if (!VALID_SLOTS.includes(arriveSlot) || !VALID_SLOTS.includes(departSlot))
+            return res.status(400).json({ error: 'Invalid time slot' });
+          if (departDate < arriveDate) return res.status(400).json({ error: 'Departure must be on or after arrival' });
+        }
+        const arriveDateVal  = coming ? arriveDate : null;
+        const arriveSlotVal  = coming ? arriveSlot : null;
+        const departDateVal  = coming ? departDate : null;
+        const departSlotVal  = coming ? departSlot : null;
+        const saveLunchVal   = coming ? !!saveLunch : false;
+        const saveDinnerVal  = coming ? !!saveDinner : false;
+        const aperitifVal    = coming && typeof aperitif === 'string' && VALID_DRINKS.has(aperitif) ? aperitif : null;
+        const pickupNeededVal  = coming ? !!pickupNeeded : false;
+        const dropoffNeededVal = coming ? !!dropoffNeeded : false;
+        const pickupTimeVal  = coming && typeof pickupTime  === 'string' && /^\d{2}:\d{2}$/.test(pickupTime)  ? pickupTime  : null;
+        const pickupFromVal  = coming && typeof pickupFrom  === 'string' && pickupFrom.length  <= 200 ? pickupFrom.trim()  || null : null;
+        const dropoffTimeVal = coming && typeof dropoffTime === 'string' && /^\d{2}:\d{2}$/.test(dropoffTime) ? dropoffTime : null;
+        const dropoffToVal   = coming && typeof dropoffTo   === 'string' && dropoffTo.length   <= 200 ? dropoffTo.trim()   || null : null;
         const [row] = await db`
           INSERT INTO visits (user_id, arrive_date, arrive_slot, save_lunch, save_dinner, depart_date, depart_slot, aperitif,
-                              pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to)
-          VALUES (${id}, ${arriveDate}, ${arriveSlot}, ${!!saveLunch}, ${!!saveDinner}, ${departDate}, ${departSlot}, ${aperitifVal},
-                  ${!!pickupNeeded}, ${pickupTimeVal}, ${pickupFromVal}, ${!!dropoffNeeded}, ${dropoffTimeVal}, ${dropoffToVal})
+                              pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to, status)
+          VALUES (${id}, ${arriveDateVal}, ${arriveSlotVal}, ${saveLunchVal}, ${saveDinnerVal}, ${departDateVal}, ${departSlotVal}, ${aperitifVal},
+                  ${pickupNeededVal}, ${pickupTimeVal}, ${pickupFromVal}, ${dropoffNeededVal}, ${dropoffTimeVal}, ${dropoffToVal}, ${statusVal})
           ON CONFLICT (user_id) DO UPDATE SET
             arrive_date    = EXCLUDED.arrive_date,
             arrive_slot    = EXCLUDED.arrive_slot,
@@ -204,9 +222,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             dropoff_needed = EXCLUDED.dropoff_needed,
             dropoff_time   = EXCLUDED.dropoff_time,
             dropoff_to     = EXCLUDED.dropoff_to,
+            status         = EXCLUDED.status,
             updated_at     = NOW()
           RETURNING arrive_date::text, arrive_slot, save_lunch, save_dinner, depart_date::text, depart_slot, aperitif,
-                    pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to
+                    pickup_needed, pickup_time, pickup_from, dropoff_needed, dropoff_time, dropoff_to, status
         `;
         return res.status(200).json(row);
       }
@@ -666,6 +685,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_needed BOOLEAN NOT NULL DEFAULT false`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_time   TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_to     TEXT`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS status         TEXT NOT NULL DEFAULT 'coming'`;
+      // Allow status-only rows (not coming / undecided) with no dates.
+      await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
+      await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;
+      await db`ALTER TABLE visits ALTER COLUMN arrive_slot DROP NOT NULL`;
+      await db`ALTER TABLE visits ALTER COLUMN depart_slot DROP NOT NULL`;
       await db`
         CREATE TABLE IF NOT EXISTS push_subscriptions (
           id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

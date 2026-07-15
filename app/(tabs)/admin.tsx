@@ -118,6 +118,7 @@ type FamilyMember = {
   dropoffNeeded?: boolean | null;
   dropoffTime?: string | null;
   dropoffTo?: string | null;
+  visitStatus?: 'coming' | 'not_coming' | 'undecided' | null;
   isTest?: boolean | null;
 };
 
@@ -590,6 +591,10 @@ function MemberCard({
                 Leaving {formatDate(member.departDate!)}, {slotLabel(member.departSlot!)}
               </Text>
             </>
+          ) : member.visitStatus === 'not_coming' ? (
+            <Text style={styles.visitNone}>Not coming this year</Text>
+          ) : member.visitStatus === 'undecided' ? (
+            <Text style={styles.visitNone}>Plans not finalised</Text>
           ) : (
             <Text style={styles.visitNone}>No upcoming visit</Text>
           )}
@@ -739,7 +744,13 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
             </>
           ) : (
             <View style={styles.modalSection}>
-              <Text style={styles.modalNoVisit}>No visit planned yet</Text>
+              <Text style={styles.modalNoVisit}>
+                {member.visitStatus === 'not_coming'
+                  ? 'Not coming this year'
+                  : member.visitStatus === 'undecided'
+                  ? 'Plans not finalised yet'
+                  : 'No visit planned yet'}
+              </Text>
             </View>
           )}
 
