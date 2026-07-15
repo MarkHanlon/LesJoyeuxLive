@@ -9,6 +9,8 @@
 | _(pending — first build with stamp)_ | 5ff1dec | Build stamp, THEME fix, aperitif labels, Events tab date diagnostic | 🕐 Not yet tested |
 | _(pending)_ | 86f8293 | Auto-refresh (focus + interval + foreground + push nudge) | 🕐 Not yet tested |
 | _(pending)_ | 20c404c | Android Events scroll-jump fix | 🕐 Not yet tested |
+| _(pending)_ | f69df6d | Cold-open Home fetch (no 30s delay) | 🕐 Not yet tested |
+| _(pending)_ | (visit-status) | My {year} Visit title + not-coming/undecided status | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 
@@ -122,6 +124,11 @@ _Nothing actively in progress — ready for next feature._
 - [x] **Mid-edit guard** — My Visit passes `enabled: false` to the hook while editing / changing a drink / saving, so a background poll can never clobber unsaved form input.
 - [x] **Push-triggered instant refresh (Layer 2)** — `public/sw.js` now `postMessage`s all open app windows on `push`; `useAutoRefresh` listens for the `{ type: 'refresh' }` message and re-fetches. Signups/approvals refresh the open screen in ~1s, with polling as the backstop. Fixes the reported bug where an admin's **pending-approvals list didn't update without closing/reopening the app** (PR #10, commit `86f8293`).
 - [x] **Android Events scroll-jump fix** — the 20s Family poll used to toggle `eventsLoading` on every refresh, swapping the Events `ScrollView` content for a spinner and back; the content-height collapse reset Android scroll to the top (iOS unaffected). Fixed by gating the spinner behind a first-load `useRef` (`eventsLoadedRef`) in `admin.tsx` so background polls refresh the list silently and preserve scroll position (PR #11, commit `20c404c`). See the Auto-Refresh Gotcha note below.
+
+### My Visit — Year Title & Attendance Status (2026-07-13)
+- [x] **Year in title** — My Visit page header now reads "My {current year} Visit".
+- [x] **Attendance status** — two tappable options at the top of My Visit: "Not coming this year" and "Not finalised yet". Selecting one grays out (disables) the date/aperitif/transport sections; saving persists the status. Tapping the active option returns to "coming". New `visits.status` column (`coming`/`not_coming`/`undecided`, default `coming`); date/slot columns relaxed to nullable so a status-only row can be stored, and dates are cleared server-side when status ≠ coming.
+- [x] **Consumers** — a not-coming/undecided member carries no dates, so Home news, Tonight summary, aperitif/meal counts and Events arrivals/departures already exclude them; the Family tab member card + detail modal show "Not coming this year" / "Plans not finalised" instead of a bare "No upcoming visit", and the Home CTA reflects the user's own status.
 
 ### Family Tab Improvements (2026-04-30)
 - [x] **Tonight's Aperitifs card** — summary card at the top of the Family tab showing everyone's drink choice for tonight; only visible when at least one person is visiting or arriving today

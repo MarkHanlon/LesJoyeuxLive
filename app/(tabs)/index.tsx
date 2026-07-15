@@ -22,7 +22,11 @@ const FADE_MS = 700;
 const NEWS_ITEM_H = 60;
 const NEWS_SCROLL_MS = 3200;
 
-type VisitData = { arriveDate: string; arriveSlot: string; departDate: string } | null;
+type VisitStatus = 'coming' | 'not_coming' | 'undecided';
+type VisitData =
+  | { status: 'coming'; arriveDate: string; arriveSlot: string; departDate: string }
+  | { status: 'not_coming' | 'undecided' }
+  | null;
 
 type Member = {
   id: string;
@@ -197,11 +201,19 @@ export default function HomeScreen() {
     fetch(`/api/visit/${user.id}`, { headers: { 'x-user-id': user.id } })
       .then(r => r.ok ? r.json() : null)
       .then(d => {
-        setVisit(d?.arrive_date ? {
-          arriveDate: String(d.arrive_date).slice(0, 10),
-          arriveSlot: String(d.arrive_slot),
-          departDate: String(d.depart_date).slice(0, 10),
-        } : null);
+        const status: VisitStatus = (d?.status as VisitStatus) ?? 'coming';
+        if (status !== 'coming') {
+          setVisit({ status });
+        } else if (d?.arrive_date) {
+          setVisit({
+            status: 'coming',
+            arriveDate: String(d.arrive_date).slice(0, 10),
+            arriveSlot: String(d.arrive_slot),
+            departDate: String(d.depart_date).slice(0, 10),
+          });
+        } else {
+          setVisit(null);
+        }
       })
       .catch(() => setVisit(null));
     fetch('/api/family/members', { headers: { 'x-user-id': user.id } })
@@ -230,9 +242,12 @@ export default function HomeScreen() {
   }, [crossfade]);
 
   const today = todayStr();
-  const days = visit?.arriveDate ? daysUntil(visit.arriveDate) : null;
-  const isVisiting = !!(visit && today >= visit.arriveDate && today <= visit.departDate);
-  const isPast     = !!(visit && today > visit.departDate);
+  const coming     = visit?.status === 'coming' ? visit : null;
+  const notComing  = visit?.status === 'not_coming';
+  const undecided  = visit?.status === 'undecided';
+  const days = coming ? daysUntil(coming.arriveDate) : null;
+  const isVisiting = !!(coming && today >= coming.arriveDate && today <= coming.departDate);
+  const isPast     = !!(coming && today > coming.departDate);
 
   const newsItems = useMemo(
     () => buildNewsItems(members, today, user?.id ?? ''),
@@ -348,7 +363,17 @@ export default function HomeScreen() {
         {/* ── My visit — compact CTA ── */}
         {visit !== undefined && (
           <View style={styles.ctaCard}>
-            {visit === null || isPast ? (
+            {notComing || undecided ? (
+              <TouchableOpacity style={styles.ctaRow} onPress={() => router.push('/(tabs)/visit')} activeOpacity={0.8}>
+                <Text style={styles.ctaEmoji}>{notComing ? '🚫' : '🤔'}</Text>
+                <View style={styles.ctaTextBlock}>
+                  <Text style={styles.ctaTitle}>{notComing ? 'Not coming this year' : 'Still deciding'}</Text>
+                  <Text style={styles.ctaSub}>Tap to change your plans</Text>
+                </View>
+                <Text style={styles.editLink}>Edit →</Text>
+              </TouchableOpacity>
+
+            ) : visit === null || isPast ? (
               <TouchableOpacity style={styles.ctaRow} onPress={() => router.push('/(tabs)/visit')} activeOpacity={0.8}>
                 <Text style={styles.ctaEmoji}>🏡</Text>
                 <View style={styles.ctaTextBlock}>
@@ -363,7 +388,7 @@ export default function HomeScreen() {
                 <Text style={styles.ctaEmoji}>🥂</Text>
                 <View style={styles.ctaTextBlock}>
                   <Text style={styles.ctaTitle}>Bienvenue !</Text>
-                  <Text style={styles.ctaSub}>Leaving {formatDate(visit.departDate)}</Text>
+                  <Text style={styles.ctaSub}>Leaving {formatDate(coming!.departDate)}</Text>
                 </View>
                 <Text style={styles.editLink}>Edit →</Text>
               </TouchableOpacity>
@@ -383,7 +408,7 @@ export default function HomeScreen() {
                 <View style={styles.ctaTextBlock}>
                   <Text style={styles.ctaEyebrow}>DAYS TO GO</Text>
                   <Text style={styles.ctaSub}>
-                    Arriving {formatDate(visit.arriveDate)}, {slotLabel(visit.arriveSlot)}
+                    Arriving {formatDate(coming!.arriveDate)}, {slotLabel(coming!.arriveSlot)}
                   </Text>
                 </View>
                 <Text style={styles.editLink}>Edit →</Text>
