@@ -649,10 +649,10 @@ function MemberCard({
         )}
       </View>
 
-      {/* Role selector — admin-only, manage mode only */}
-      {managing && onRoleChange && (
+      {/* Role selector (+ owner) — manage mode only */}
+      {managing && (onRoleChange || onOwnerToggle) && (
         <View style={styles.roleRow}>
-          {(['guest', 'staff', 'admin'] as Role[]).map(r => {
+          {onRoleChange && (['guest', 'staff', 'admin'] as Role[]).map(r => {
             const rc = ROLE_CONFIG[r];
             const active = member.role === r;
             // Only a site owner may grant or remove the admin role.
@@ -676,23 +676,24 @@ function MemberCard({
               </TouchableOpacity>
             );
           })}
+          {onOwnerToggle && (
+            <TouchableOpacity
+              key="owner"
+              style={[
+                styles.roleChip,
+                member.isOwner && styles.ownerChipActive,
+                changingOwner && { opacity: 0.5 },
+              ]}
+              onPress={() => !changingOwner && onOwnerToggle(!member.isOwner)}
+              disabled={changingOwner}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.roleChipText, member.isOwner && styles.ownerChipTextActive]}>
+                👑 Owner
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
-      )}
-
-      {/* Site-owner toggle — owners only */}
-      {managing && onOwnerToggle && (
-        <TouchableOpacity
-          style={[styles.ownerRow, member.isOwner && styles.ownerRowActive, changingOwner && { opacity: 0.5 }]}
-          onPress={() => onOwnerToggle(!member.isOwner)}
-          disabled={changingOwner}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.ownerRowLabel}>👑 Site owner</Text>
-          <Text style={[styles.ownerRowValue, member.isOwner && styles.ownerRowValueActive]}>
-            {member.isOwner ? 'Yes — tap to remove' : 'No — tap to make owner'}
-          </Text>
-          {changingOwner && <ActivityIndicator size="small" color="#C85A2E" />}
-        </TouchableOpacity>
       )}
 
       {/* Room allocation — admin manage mode, only for members with a visit */}
@@ -2003,17 +2004,9 @@ const styles = StyleSheet.create({
   roomAssignValue: { flex: 1, textAlign: 'right', fontSize: 14, fontWeight: '700', color: '#C85A2E',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
 
-  // Site-owner toggle
-  ownerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EDD9A3',
-  },
-  ownerRowActive: {},
-  ownerRowLabel: { fontSize: 14, fontWeight: '600', color: '#1A1209',
-    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-  ownerRowValue: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '600', color: '#8B6245',
-    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-  ownerRowValueActive: { color: '#C8973D', fontWeight: '700' },
+  // Site-owner pill (4th chip in the role row)
+  ownerChipActive: { backgroundColor: '#FBEFD0', borderColor: '#C8973D' },
+  ownerChipTextActive: { color: '#8A6D1F', fontWeight: '700' },
 
   // Date lens
   roomDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
