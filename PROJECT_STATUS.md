@@ -120,6 +120,13 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 - **Badges vote** — a voting mechanism for the family to award badges to each other (fun awards).
 - **Tidy messages** — quick broadcast nudges/reminders to tidy up (e.g. "shoes away", "tidy the games room", "bring your glasses down").
 
+### 💡 Future ideas (backlog — not yet scoped)
+_Rough ideas captured 2026-07-18; each needs scoping before implementation._
+- **Location tracker** — see who's where around the château in real time, based on rooms + named locations (pool, games room, kitchen, terrace, etc.). Natural companion to the room-allocation feature.
+- **Cork count submission** — let people log/submit a running tally of corks (bottles opened) — a fun family counter.
+- **Badges vote** — a voting mechanism for the family to award badges to each other (fun awards).
+- **Tidy messages** — quick broadcast nudges/reminders to tidy up (e.g. "shoes away", "tidy the games room", "bring your glasses down").
+
 
 ### Events Tab & Arrivals/Departures (2026-05-03)
 - [x] **Events tab on La Famille screen** — in-page "People / Events" tab switcher; Events tab shows date-by-date view of the user's stay; admin can add/delete events per day; event time (optional) shown in a badge
