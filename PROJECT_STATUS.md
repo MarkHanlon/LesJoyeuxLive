@@ -106,6 +106,13 @@ _Nothing actively in progress — ready for next feature._
 3. **Security: fix privilege escalation** — a user can currently make themselves admin. Lock down the role/admin path so non-owners cannot grant themselves admin (`PATCH /api/admin/role/:id` and any client path that sets `is_admin`).
 4. **Quick evening-aperitif change** — make it easy to change tonight's aperitif without editing the whole visit (the app already has a "tonight" drink override via `PATCH /api/visit/drink/:id`; surface a fast one-tap entry point, e.g. from Home or the Family tab, not just inside My Visit while staying).
 
+### 💡 Future ideas (backlog — not yet scoped)
+_Rough ideas captured 2026-07-18; each needs scoping before implementation._
+- **Location tracker** — see who's where around the château in real time, based on rooms + named locations (pool, games room, kitchen, terrace, etc.). Natural companion to the room-allocation feature.
+- **Cork count submission** — let people log/submit a running tally of corks (bottles opened) — a fun family counter.
+- **Badges vote** — a voting mechanism for the family to award badges to each other (fun awards).
+- **Tidy messages** — quick broadcast nudges/reminders to tidy up (e.g. "shoes away", "tidy the games room", "bring your glasses down").
+
 
 ### Events Tab & Arrivals/Departures (2026-05-03)
 - [x] **Events tab on La Famille screen** — in-page "People / Events" tab switcher; Events tab shows date-by-date view of the user's stay; admin can add/delete events per day; event time (optional) shown in a badge
