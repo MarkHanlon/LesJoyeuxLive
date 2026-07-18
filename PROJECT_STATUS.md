@@ -100,6 +100,13 @@ _Nothing actively in progress — ready for next feature._
 
 ## 📋 To-Do / Requested by User
 
+### 🔜 Next up — requested 2026-07-18
+1. **Add new aperitifs, including Coke Zero** — extend the single master drinks list (`constants/drinks.ts` + `VALID_DRINKS` in `api/[...path].ts` + the `DRINKS` array in `visit.tsx`; ideally consolidate to one source first).
+2. **Restrict the "Run Migrations" and test-user (seed/clear) buttons to the owner only** — currently visible to any admin; should be limited to the primary user (Mark), not all admins.
+3. **Security: fix privilege escalation** — a user can currently make themselves admin. Lock down the role/admin path so non-owners cannot grant themselves admin (`PATCH /api/admin/role/:id` and any client path that sets `is_admin`).
+4. **Quick evening-aperitif change** — make it easy to change tonight's aperitif without editing the whole visit (the app already has a "tonight" drink override via `PATCH /api/visit/drink/:id`; surface a fast one-tap entry point, e.g. from Home or the Family tab, not just inside My Visit while staying).
+
+
 ### Events Tab & Arrivals/Departures (2026-05-03)
 - [x] **Events tab on La Famille screen** — in-page "People / Events" tab switcher; Events tab shows date-by-date view of the user's stay; admin can add/delete events per day; event time (optional) shown in a badge
 - [x] **Arrivals & departures as event entries** — each family member's arrival (🚗) and departure (👋) automatically derived from the `members` array and shown as read-only rows at the top of each day's section in the Events tab; no database changes required
