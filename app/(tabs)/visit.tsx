@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -261,6 +262,47 @@ function DrinkPicker({ value, onChange }: { value: DrinkKey | null; onChange: (d
   );
 }
 
+// Simple full-list aperitif picker — tap the shown drink to open it.
+function AperitifPickerModal({ open, current, busy, onPick, onClose }: {
+  open: boolean;
+  current: DrinkKey | null;
+  busy: boolean;
+  onPick: (d: DrinkKey) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  const Row = ({ dkey, icon, label }: { dkey: DrinkKey; icon: string; label: string }) => {
+    const active = current === dkey;
+    return (
+      <TouchableOpacity
+        style={[styles.pickerRow, active && styles.pickerRowActive]}
+        onPress={() => onPick(dkey)}
+        disabled={busy}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.pickerIcon}>{icon}</Text>
+        <Text style={[styles.pickerLabel, active && styles.pickerLabelActive]}>{label}</Text>
+        {active && <Text style={styles.pickerCheck}>✓</Text>}
+      </TouchableOpacity>
+    );
+  };
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.pickerSheet}>
+          <Text style={styles.pickerTitle}>Choose your aperitif</Text>
+          <ScrollView style={{ maxHeight: 440 }}>
+            {DRINKS.map(d => <Row key={d.key} dkey={d.key as DrinkKey} icon={d.icon} label={d.label} />)}
+            <Row dkey={'later'} icon="🎲" label="I'll choose on the day!" />
+          </ScrollView>
+          {busy && <ActivityIndicator color="#C85A2E" style={{ marginTop: 8 }} />}
+          <Text style={styles.pickerDismiss}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 // ── Main screen ─────────────────────────────────────────────────────────────
 
 export default function VisitScreen() {
@@ -273,6 +315,7 @@ export default function VisitScreen() {
   const [isChangingDrink, setIsChangingDrink] = useState(false);
   const [pendingDrink, setPendingDrink] = useState<DrinkKey | null>(null);
   const [isSavingDrink, setIsSavingDrink] = useState(false);
+  const [drinkPickerOpen, setDrinkPickerOpen] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -391,6 +434,25 @@ export default function VisitScreen() {
   function selectStatus(next: VisitStatus) {
     updateForm({ status: form.status === next ? 'coming' : next });
     if (saved && !isEditing) setIsEditing(true);
+  }
+
+  // Change the selected aperitif for the whole visit (tap the shown drink → simple list).
+  async function pickAperitif(key: DrinkKey) {
+    if (!user) return;
+    setIsSavingDrink(true);
+    try {
+      const res = await fetch(`/api/visit/drink/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ aperitif: key, tonight: false }),
+      });
+      if (res.ok) {
+        setSaved(prev => prev ? { ...prev, aperitif: key, tonightAperitif: null } : prev);
+        setDrinkPickerOpen(false);
+      }
+    } finally {
+      setIsSavingDrink(false);
+    }
   }
 
   async function saveQuickDrink(tonight: boolean) {
@@ -519,7 +581,7 @@ export default function VisitScreen() {
             )}
           </View>
 
-          {(effectiveDrink || isStaying) && (
+          {saved && (
             <>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryAperitifBlock}>
@@ -527,22 +589,33 @@ export default function VisitScreen() {
                   {hasTonightOverride ? "TONIGHT'S APÉRITIF ✨" : 'APÉRITIF'}
                 </Text>
 
-                {effectiveDrink && (
-                  effectiveDrink === 'later' ? (
+                <TouchableOpacity onPress={() => setDrinkPickerOpen(true)} activeOpacity={0.7}>
+                  {!effectiveDrink ? (
+                    <View style={styles.summaryDrinkRow}>
+                      <Text style={styles.summaryDrinkIcon}>🍹</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.summaryDrinkName}>Choose your aperitif</Text>
+                        <Text style={styles.summaryDrinkHint}>Tap to pick from the list</Text>
+                      </View>
+                      <Text style={styles.summaryDrinkEdit}>Change ›</Text>
+                    </View>
+                  ) : effectiveDrink === 'later' ? (
                     <View style={styles.summaryDrinkRow}>
                       <Text style={styles.summaryDrinkIcon}>🎲</Text>
-                      <Text style={styles.summaryDrinkName}>I'll choose on the day!</Text>
+                      <Text style={[styles.summaryDrinkName, { flex: 1 }]}>I'll choose on the day!</Text>
+                      <Text style={styles.summaryDrinkEdit}>Change ›</Text>
                     </View>
                   ) : (
                     <View style={styles.summaryDrinkRow}>
                       <Text style={styles.summaryDrinkIcon}>{drinkByKey(effectiveDrink)?.icon}</Text>
-                      <View>
+                      <View style={{ flex: 1 }}>
                         <Text style={styles.summaryDrinkName}>{drinkByKey(effectiveDrink)?.label}</Text>
                         <Text style={styles.summaryDrinkHint}>{drinkByKey(effectiveDrink)?.hint}</Text>
                       </View>
+                      <Text style={styles.summaryDrinkEdit}>Change ›</Text>
                     </View>
-                  )
-                )}
+                  )}
+                </TouchableOpacity>
 
                 {hasTonightOverride && saved?.aperitif && saved.aperitif !== saved.tonightAperitif && (
                   <Text style={styles.tonightNote}>
@@ -817,6 +890,14 @@ export default function VisitScreen() {
           </View>
         </>
       )}
+
+      <AperitifPickerModal
+        open={drinkPickerOpen}
+        current={effectiveDrink}
+        busy={isSavingDrink}
+        onPick={pickAperitif}
+        onClose={() => setDrinkPickerOpen(false)}
+      />
     </ScrollView>
   );
 }
@@ -1245,6 +1326,80 @@ const styles = StyleSheet.create({
     color: '#8B6245',
     fontStyle: 'italic',
     marginTop: 1,
+  },
+  summaryDrinkEdit: {
+    fontSize: 13,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '700',
+    color: '#C85A2E',
+  },
+
+  // Aperitif picker (tap the drink to change)
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(26, 18, 9, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pickerSheet: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#F5EDD6',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#EDD9A3',
+  },
+  pickerTitle: {
+    fontSize: 20,
+    fontFamily: 'Playfair Display, Georgia, serif',
+    fontWeight: '700',
+    color: '#1A1209',
+    marginBottom: 12,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EDD9A3',
+    backgroundColor: '#FFFDF5',
+    marginBottom: 6,
+  },
+  pickerRowActive: {
+    borderColor: '#C85A2E',
+    backgroundColor: '#FDF8EF',
+  },
+  pickerIcon: {
+    fontSize: 24,
+    width: 30,
+    textAlign: 'center',
+  },
+  pickerLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    fontWeight: '600',
+    color: '#5C3D2E',
+  },
+  pickerLabelActive: {
+    color: '#C85A2E',
+  },
+  pickerCheck: {
+    fontSize: 16,
+    color: '#C85A2E',
+    fontWeight: '700',
+  },
+  pickerDismiss: {
+    fontSize: 12,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+    color: '#B8956A',
+    textAlign: 'center',
+    marginTop: 10,
   },
 
   // Tonight quick-change
