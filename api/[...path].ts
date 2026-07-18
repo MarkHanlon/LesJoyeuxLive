@@ -11,8 +11,9 @@ const VALID_SLOTS = ['morning', 'lunchtime', 'afternoon', 'dinnertime', 'evening
 const VALID_ROLES = ['guest', 'staff', 'admin'];
 const VALID_DRINKS = new Set([
   'pastis', 'red_wine', 'white_wine', 'rose', 'gt',
-  'rum_coke', 'vodka_coke', 'gin_orange', 'cuba_libre', 'skinny_bitch',
-  'beer', 'sparkling', 'oj', 'mango', 'lemonade', 'cola', 'later',
+  'rum_coke', 'rum_coke_zero', 'vodka_coke', 'vodka_coke_zero', 'gin_orange',
+  'cuba_libre', 'cuba_libre_zero', 'skinny_bitch',
+  'beer', 'sparkling', 'oj', 'mango', 'lemonade', 'cola', 'coke_zero', 'later',
   // kept for backward-compat display of existing records
   'kir', 'kir_royale', 'cremant', 'lillet', 'suze',
 ]);
