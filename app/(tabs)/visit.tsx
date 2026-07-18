@@ -33,6 +33,7 @@ const DRINKS = [
   { key: 'beer',        label: 'Beer',             hint: 'une bière',                 icon: '🍺' },
   { key: 'sparkling',   label: 'Sparkling Water',  hint: 'eau pétillante',            icon: '💧' },
   { key: 'oj',          label: 'Orange Juice',     hint: "jus d'orange",              icon: '🍊' },
+  { key: 'mango',       label: 'Mango Juice',      hint: 'jus de mangue',             icon: '🥭' },
   { key: 'lemonade',    label: 'Lemonade',         hint: 'citron pressé',             icon: '🍋' },
   { key: 'cola',        label: 'Cola',             hint: 'Coca, Pepsi…',              icon: '🥤' },
 ] as const;
