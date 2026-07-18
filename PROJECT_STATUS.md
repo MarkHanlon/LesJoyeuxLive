@@ -11,6 +11,7 @@
 | _(pending)_ | 20c404c | Android Events scroll-jump fix | 🕐 Not yet tested |
 | _(pending)_ | f69df6d | Cold-open Home fetch (no 30s delay) | 🕐 Not yet tested |
 | _(pending)_ | (visit-status) | My {year} Visit title + not-coming/undecided status | 🕐 Not yet tested |
+| _(pending)_ | (rooms) | Room allocation (Rooms sub-tab, admin assign, auto-owner) | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 
@@ -125,6 +126,14 @@ _Nothing actively in progress — ready for next feature._
 - [x] **Push-triggered instant refresh (Layer 2)** — `public/sw.js` now `postMessage`s all open app windows on `push`; `useAutoRefresh` listens for the `{ type: 'refresh' }` message and re-fetches. Signups/approvals refresh the open screen in ~1s, with polling as the backstop. Fixes the reported bug where an admin's **pending-approvals list didn't update without closing/reopening the app** (PR #10, commit `86f8293`).
 - [x] **Android Events scroll-jump fix** — the 20s Family poll used to toggle `eventsLoading` on every refresh, swapping the Events `ScrollView` content for a spinner and back; the content-height collapse reset Android scroll to the top (iOS unaffected). Fixed by gating the spinner behind a first-load `useRef` (`eventsLoadedRef`) in `admin.tsx` so background polls refresh the list silently and preserve scroll position (PR #11, commit `20c404c`). See the Auto-Refresh Gotcha note below.
 
+### Room Allocation (2026-07-13)
+- [x] **Master room list** — `constants/rooms.ts` defines the 17 rooms once (Attic, Cottages 1–3, Emma's, Gîtes 1–2, Yellow, Master, Posh, Peach, Princess Tower, Roo's, Blue, Twin, Family Room, Chapel), with owners on the five owned rooms; imported by both the app and the API (API uses a relative import).
+- [x] **Data model** — `visits.room TEXT` column (one room per person's stay, tied to their existing arrive/depart dates). Admin-only `PATCH /api/admin/room/:id`; `room` exposed via `GET /api/family/members` and `GET /api/visit/:id`.
+- [x] **Auto-assigned owners** — an owner (matched by first name) shows in their room automatically when they have a visit; an explicit allocation overrides it (`effectiveRoom()` helper). No background DB write.
+- [x] **Rooms sub-tab** on the Family tab (People / Events / Rooms) — a date-pinned list of all rooms showing who's in each on the chosen day (‹ › date lens). Read-only for everyone; admins get ＋Add someone per room and can tap an occupant to move/clear. Also a room picker on the member card in Manage mode.
+- [x] **Whole-visit booking** — the date picker is only a viewing lens; a room is booked for a person's entire stay. Not-coming/undecided members (no dates) never appear.
+- [ ] Follow-ups: occupancy timeline grid; print schedule by room/date.
+
 ### My Visit — Year Title & Attendance Status (2026-07-13)
 - [x] **Year in title** — My Visit page header now reads "My {current year} Visit".
 - [x] **Attendance status** — two tappable options at the top of My Visit: "Not coming this year" and "Not finalised yet". Selecting one grays out (disables) the date/aperitif/transport sections; saving persists the status. Tapping the active option returns to "coming". New `visits.status` column (`coming`/`not_coming`/`undecided`, default `coming`); date/slot columns relaxed to nullable so a status-only row can be stored, and dates are cleared server-side when status ≠ coming.
@@ -170,7 +179,7 @@ _Nothing actively in progress — ready for next feature._
 - [ ] Task/chore management system
 - [ ] Shopping list functionality
 - [ ] Family member profiles
-- [ ] Allocation of people to rooms
+- [x] **Allocation of people to rooms** — see "Room Allocation" section above
 
 ### Admin features
 - [ ] Ability to print out schedule of all people, by room / date

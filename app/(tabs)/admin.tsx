@@ -17,6 +17,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
+import { ROOMS, roomLabel, effectiveRoom } from '../../constants/rooms';
 import { addDays, datesBetween, daysUntil, formatDate, formatDateLong, slotLabel, todayStr } from '../../utils/date';
 import { avatarColor, initials } from '../../utils/ui';
 
@@ -97,7 +98,7 @@ function NotificationBanner({ userId }: { userId: string }) {
 }
 
 type Role = 'guest' | 'staff' | 'admin';
-type TabKey = 'people' | 'events';
+type TabKey = 'people' | 'events' | 'rooms';
 
 type FamilyMember = {
   id: string;
@@ -119,6 +120,7 @@ type FamilyMember = {
   dropoffTime?: string | null;
   dropoffTo?: string | null;
   visitStatus?: 'coming' | 'not_coming' | 'undecided' | null;
+  room?: string | null;
   isTest?: boolean | null;
 };
 
@@ -534,6 +536,8 @@ function MemberCard({
   removing,
   onRoleChange,
   changingRole,
+  onRoomPress,
+  roomBusy,
   onPress,
 }: {
   member: FamilyMember;
@@ -542,12 +546,15 @@ function MemberCard({
   removing?: boolean;
   onRoleChange?: (role: Role) => void;
   changingRole?: boolean;
+  onRoomPress?: () => void;
+  roomBusy?: boolean;
   onPress?: () => void;
 }) {
   const today = todayStr();
   const hasVisit = !!(member.arriveDate && member.departDate);
   const isHere   = hasVisit && today >= member.arriveDate! && today <= member.departDate!;
   const isFuture = hasVisit && today < member.arriveDate!;
+  const effRoom  = hasVisit ? effectiveRoom(member.room, member.name) : null;
   const drinkIcon = member.aperitif ? (DRINK_ICONS[member.aperitif] ?? null) : null;
 
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
@@ -608,6 +615,9 @@ function MemberCard({
               🚗 Drop off{member.dropoffTime ? ` ${member.dropoffTime}` : ''}{member.dropoffTo ? ` · ${member.dropoffTo}` : ''}
             </Text>
           )}
+          {(isHere || isFuture) && effRoom && !managing && (
+            <Text style={styles.roomNote}>🛏 {roomLabel(effRoom)}</Text>
+          )}
         </View>
 
         {drinkIcon && !managing && (
@@ -658,6 +668,15 @@ function MemberCard({
           })}
         </View>
       )}
+
+      {/* Room allocation — admin manage mode, only for members with a visit */}
+      {managing && onRoomPress && hasVisit && (
+        <TouchableOpacity style={styles.roomAssignRow} onPress={onRoomPress} disabled={roomBusy} activeOpacity={0.7}>
+          <Text style={styles.roomAssignLabel}>🛏 Room</Text>
+          <Text style={styles.roomAssignValue}>{effRoom ? roomLabel(effRoom) : 'Assign'} ›</Text>
+          {roomBusy && <ActivityIndicator size="small" color="#C85A2E" />}
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -671,6 +690,7 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
   const drinkIcon  = member.aperitif ? (DRINK_ICONS[member.aperitif]  ?? '🍷') : null;
   const drinkLabel = member.aperitif ? (DRINK_LABELS[member.aperitif] ?? member.aperitif) : null;
+  const effRoom = hasVisit ? effectiveRoom(member.room, member.name) : null;
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -728,6 +748,17 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
                 )}
               </View>
 
+              {/* Room */}
+              {effRoom && (
+                <>
+                  <View style={styles.modalDivider} />
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalEyebrow}>ROOM</Text>
+                    <Text style={styles.modalDateLine}>🛏  {roomLabel(effRoom)}</Text>
+                  </View>
+                </>
+              )}
+
               {/* Apéritif */}
               {drinkIcon && (
                 <>
@@ -761,6 +792,82 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
   );
 }
 
+// Pick a room for a given member (admin only).
+function RoomPickerModal({ member, busy, onPick, onClose }: {
+  member: FamilyMember | null;
+  busy: boolean;
+  onPick: (roomKey: string | null) => void;
+  onClose: () => void;
+}) {
+  if (!member) return null;
+  const current = effectiveRoom(member.room, member.name);
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
+          <Text style={styles.roomSheetTitle}>Room for {member.name.split(' ')[0]}</Text>
+          <ScrollView style={{ maxHeight: 400 }}>
+            {ROOMS.map(r => {
+              const active = current === r.key;
+              const owner = 'owner' in r ? r.owner : null;
+              return (
+                <TouchableOpacity
+                  key={r.key}
+                  style={[styles.roomSheetRow, active && styles.roomSheetRowActive]}
+                  onPress={() => onPick(r.key)}
+                  disabled={busy}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.roomSheetRowText, active && styles.roomSheetRowTextActive]}>
+                    {r.label}{owner ? `  ·  ${owner}'s` : ''}
+                  </Text>
+                  {active && <Text style={styles.roomSheetCheck}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity style={styles.roomSheetClear} onPress={() => onPick(null)} disabled={busy} activeOpacity={0.7}>
+              <Text style={styles.roomSheetClearText}>Clear allocation</Text>
+            </TouchableOpacity>
+          </ScrollView>
+          {busy && <ActivityIndicator color="#C85A2E" style={{ marginTop: 8 }} />}
+          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// Pick a member to add to a given room (admin only).
+function MemberPickerModal({ roomKey, members, onPick, onClose }: {
+  roomKey: string | null;
+  members: FamilyMember[];
+  onPick: (memberId: string) => void;
+  onClose: () => void;
+}) {
+  if (!roomKey) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
+          <Text style={styles.roomSheetTitle}>Add to {roomLabel(roomKey)}</Text>
+          {members.length === 0 ? (
+            <Text style={styles.roomSheetEmpty}>Nobody with a visit on this date to add.</Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 400 }}>
+              {members.map(m => (
+                <TouchableOpacity key={m.id} style={styles.roomSheetRow} onPress={() => onPick(m.id)} activeOpacity={0.7}>
+                  <Text style={styles.roomSheetRowText}>{m.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 export default function FamilyScreen() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('people');
@@ -787,6 +894,10 @@ export default function FamilyScreen() {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [roomDate, setRoomDate] = useState<string>(todayStr());   // date lens for the Rooms tab
+  const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target
+  const [addToRoomKey, setAddToRoomKey] = useState<string | null>(null);         // member picker target
+  const [roomBusyId, setRoomBusyId] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [testDataMessage, setTestDataMessage] = useState<string | null>(null);
@@ -988,6 +1099,23 @@ export default function FamilyScreen() {
     }
   }
 
+  async function changeRoom(memberId: string, room: string | null) {
+    if (!user) return;
+    setRoomBusyId(memberId);
+    try {
+      const res = await fetch(`/api/admin/room/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-admin-id': user.id },
+        body: JSON.stringify({ room }),
+      });
+      if (res.ok) {
+        setMembers(prev => prev.map(m => m.id === memberId ? { ...m, room } : m));
+      }
+    } finally {
+      setRoomBusyId(null);
+    }
+  }
+
   async function addEvent(date: string) {
     if (!user || !newTitle.trim()) return;
     setSavingEvent(true);
@@ -1108,6 +1236,8 @@ export default function FamilyScreen() {
             removing={removingIds.has(m.id)}
             onRoleChange={(managing && user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
             changingRole={changingRoleIds.has(m.id)}
+            onRoomPress={(managing && user?.isAdmin) ? () => setRoomForMember(m) : undefined}
+            roomBusy={roomBusyId === m.id}
             onPress={() => setSelectedMember(m)}
           />
         );
@@ -1352,6 +1482,87 @@ export default function FamilyScreen() {
     );
   };
 
+  // ── Rooms tab helpers ──
+  const visitingOn = (m: FamilyMember, date: string) =>
+    !!(m.arriveDate && m.departDate &&
+       String(m.arriveDate).slice(0, 10) <= date && date <= String(m.departDate).slice(0, 10));
+  const occupantsOf = (roomKey: string, date: string) =>
+    members.filter(m => visitingOn(m, date) && effectiveRoom(m.room, m.name) === roomKey);
+  const eligibleForRoom = (roomKey: string) =>
+    members.filter(m => visitingOn(m, roomDate) && effectiveRoom(m.room, m.name) !== roomKey);
+
+  const renderRoomsTab = () => (
+    <ScrollView
+      contentContainerStyle={styles.listContent}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => fetchAll(true)} tintColor="#C85A2E" />}
+    >
+      {/* Date lens */}
+      <View style={styles.roomDateRow}>
+        <TouchableOpacity onPress={() => setRoomDate(d => addDays(d, -1))} style={styles.roomDateNav} activeOpacity={0.7}>
+          <Text style={styles.roomDateArrow}>‹</Text>
+        </TouchableOpacity>
+        <View style={styles.roomDateCenter}>
+          <Text style={styles.roomDateText}>{formatDateLong(roomDate)}</Text>
+          {roomDate !== todayStr() && (
+            <TouchableOpacity onPress={() => setRoomDate(todayStr())} activeOpacity={0.7}>
+              <Text style={styles.roomDateToday}>Jump to today</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity onPress={() => setRoomDate(d => addDays(d, 1))} style={styles.roomDateNav} activeOpacity={0.7}>
+          <Text style={styles.roomDateArrow}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      {ROOMS.map(room => {
+        const occ = occupantsOf(room.key, roomDate);
+        const owner = 'owner' in room ? room.owner : null;
+        return (
+          <View key={room.key} style={styles.roomCard}>
+            <View style={styles.roomCardHead}>
+              <Text style={styles.roomName}>🛏  {room.label}</Text>
+              {owner && <Text style={styles.roomOwner}>{owner}'s</Text>}
+            </View>
+            {occ.length === 0 ? (
+              <Text style={styles.roomFree}>— Free —</Text>
+            ) : (
+              <View style={styles.roomOccupants}>
+                {occ.map(m => (
+                  <TouchableOpacity
+                    key={m.id}
+                    disabled={!user?.isAdmin || roomBusyId === m.id}
+                    onPress={() => setRoomForMember(m)}
+                    style={styles.roomOccupant}
+                    activeOpacity={0.7}
+                  >
+                    {m.avatar
+                      ? <Image source={{ uri: m.avatar }} style={styles.roomAvatar} />
+                      : <View style={[styles.roomAvatar, styles.roomAvatarFallback, { backgroundColor: avatarColor(m.name) }]}>
+                          <Text style={styles.roomAvatarInitials}>{initials(m.name)}</Text>
+                        </View>}
+                    <Text style={styles.roomOccupantName}>{m.name.split(' ')[0]}</Text>
+                    {roomBusyId === m.id && <ActivityIndicator size="small" color="#C85A2E" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {user?.isAdmin && (
+              <TouchableOpacity style={styles.roomAddBtn} onPress={() => setAddToRoomKey(room.key)} activeOpacity={0.75}>
+                <Text style={styles.roomAddBtnText}>＋ Add someone</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      })}
+
+      <Text style={styles.roomsHint}>
+        {user?.isAdmin
+          ? 'Tap a person to move or remove them. A room is booked for a person’s whole stay; the date only changes what you see.'
+          : 'Room allocations are managed by the family admins.'}
+      </Text>
+    </ScrollView>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -1395,6 +1606,15 @@ export default function FamilyScreen() {
             Events
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'rooms' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('rooms')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabBtnText, activeTab === 'rooms' && styles.tabBtnTextActive]}>
+            Rooms
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {activeTab === 'people' && user?.isAdmin && <NotificationBanner userId={user.id} />}
@@ -1433,9 +1653,23 @@ export default function FamilyScreen() {
             </View>
           )}
         </View>
-      ) : activeTab === 'people' ? renderPeopleTab() : renderEventsTab()}
+      ) : activeTab === 'people' ? renderPeopleTab()
+        : activeTab === 'events' ? renderEventsTab()
+        : renderRoomsTab()}
 
       <MemberDetailModal member={selectedMember} onClose={() => setSelectedMember(null)} />
+      <RoomPickerModal
+        member={roomForMember}
+        busy={!!roomForMember && roomBusyId === roomForMember.id}
+        onPick={(key) => { if (roomForMember) changeRoom(roomForMember.id, key); setRoomForMember(null); }}
+        onClose={() => setRoomForMember(null)}
+      />
+      <MemberPickerModal
+        roomKey={addToRoomKey}
+        members={addToRoomKey ? eligibleForRoom(addToRoomKey) : []}
+        onPick={(memberId) => { if (addToRoomKey) changeRoom(memberId, addToRoomKey); setAddToRoomKey(null); }}
+        onClose={() => setAddToRoomKey(null)}
+      />
     </View>
   );
 }
@@ -1703,6 +1937,79 @@ const styles = StyleSheet.create({
     fontSize: 12, color: '#C85A2E', marginTop: 2,
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }),
   },
+
+  // ── Rooms ──
+  roomNote: { fontSize: 12, color: '#1A6B8A', fontWeight: '600', marginTop: 3,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomAssignRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EDD9A3',
+  },
+  roomAssignLabel: { fontSize: 14, fontWeight: '600', color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomAssignValue: { flex: 1, textAlign: 'right', fontSize: 14, fontWeight: '700', color: '#C85A2E',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+
+  // Date lens
+  roomDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
+  roomDateNav: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+  roomDateArrow: { fontSize: 28, color: '#C85A2E', lineHeight: 34 },
+  roomDateCenter: { flex: 1, alignItems: 'center' },
+  roomDateText: { fontSize: 16, fontWeight: '700', color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
+  roomDateToday: { fontSize: 12, color: '#C85A2E', textDecorationLine: 'underline', marginTop: 2,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+
+  // Room card
+  roomCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginTop: 12,
+    borderWidth: 1, borderColor: '#EDD9A3',
+  },
+  roomCardHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  roomName: { flex: 1, fontSize: 17, fontWeight: '700', color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
+  roomOwner: { fontSize: 12, fontWeight: '700', color: '#C8973D', letterSpacing: 0.5,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomFree: { fontSize: 13, color: '#B8956A', fontStyle: 'italic', marginTop: 8,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomOccupants: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  roomOccupant: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FAF4E6', borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10,
+    borderWidth: 1, borderColor: '#EDD9A3',
+  },
+  roomAvatar: { width: 24, height: 24, borderRadius: 12 },
+  roomAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
+  roomAvatarInitials: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  roomOccupantName: { fontSize: 13, fontWeight: '600', color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomAddBtn: { marginTop: 12, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: '#C85A2E', alignItems: 'center' },
+  roomAddBtnText: { fontSize: 13, fontWeight: '700', color: '#C85A2E',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomsHint: { fontSize: 12, color: '#8B6245', marginTop: 18, textAlign: 'center', lineHeight: 18,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+
+  // Room / member picker sheet
+  roomSheet: {
+    backgroundColor: '#F5EDD6', borderRadius: 20, padding: 20, width: '86%', maxWidth: 420,
+    borderWidth: 1, borderColor: '#EDD9A3',
+  },
+  roomSheetTitle: { fontSize: 20, fontWeight: '700', color: '#1A1209', marginBottom: 12,
+    fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
+  roomSheetRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: '#EDD9A3', backgroundColor: '#FFFDF5', marginBottom: 6,
+  },
+  roomSheetRowActive: { borderColor: '#C85A2E', backgroundColor: '#FDF8EF' },
+  roomSheetRowText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#5C3D2E',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomSheetRowTextActive: { color: '#C85A2E' },
+  roomSheetCheck: { fontSize: 16, color: '#C85A2E', fontWeight: '700' },
+  roomSheetClear: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  roomSheetClearText: { fontSize: 14, color: '#B8956A', textDecorationLine: 'underline',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  roomSheetEmpty: { fontSize: 14, color: '#8B6245', fontStyle: 'italic', paddingVertical: 12,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
 });
 
 const bannerStyles = StyleSheet.create({

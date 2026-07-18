@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import webpush from 'web-push';
 import { getDb } from './_db';
 import { sendPushToAdmins, sendPushToAll } from './push/_send';
+import { VALID_ROOM_KEYS } from '../constants/rooms';
 
 const scryptAsync = promisify(scrypt);
 const VALID_SLOTS = ['morning', 'lunchtime', 'afternoon', 'dinnertime', 'evening'];
@@ -138,6 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           v.dropoff_time                    AS "dropoffTime",
           v.dropoff_to                      AS "dropoffTo",
           COALESCE(v.status, 'coming')      AS "visitStatus",
+          v.room                            AS "room",
           v.updated_at                      AS "visitUpdatedAt"
         FROM  users u
         LEFT  JOIN visits v ON v.user_id = u.id
@@ -170,7 +172,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             dropoff_needed,
             dropoff_time,
             dropoff_to,
-            COALESCE(status, 'coming') AS status
+            COALESCE(status, 'coming') AS status,
+            room
           FROM visits WHERE user_id = ${id} LIMIT 1
         `;
         if (rows.length === 0) return res.status(404).json({ visit: null });
@@ -348,6 +351,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE id = ${seg2}
       `;
       return res.status(200).json({ ok: true });
+    }
+
+    // PATCH /api/admin/room/:id — allocate (or clear) a room for a member's visit
+    if (seg0 === 'admin' && seg1 === 'room' && seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const adminId = req.headers['x-admin-id'] as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+      const { room } = req.body ?? {};
+      const roomVal = room == null || room === '' ? null
+        : (typeof room === 'string' && VALID_ROOM_KEYS.has(room) ? room : undefined);
+      if (roomVal === undefined) return res.status(400).json({ error: 'Invalid room' });
+      const db = getDb();
+      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
+      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      const rows = await db`
+        UPDATE visits SET room = ${roomVal}, updated_at = NOW()
+        WHERE user_id = ${seg2}
+        RETURNING user_id
+      `;
+      if (rows.length === 0) return res.status(409).json({ error: 'That person has no visit yet' });
+      return res.status(200).json({ ok: true, room: roomVal });
     }
 
     // POST /api/push/subscribe
@@ -686,6 +710,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_time   TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_to     TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS status         TEXT NOT NULL DEFAULT 'coming'`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS room           TEXT`;
       // Allow status-only rows (not coming / undecided) with no dates.
       await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;
