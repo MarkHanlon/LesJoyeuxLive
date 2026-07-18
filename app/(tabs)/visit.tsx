@@ -26,10 +26,13 @@ const DRINKS = [
   { key: 'white_wine',  label: 'White Wine',       hint: 'un blanc',                  icon: '🫗' },
   { key: 'rose',        label: 'Rosé',             hint: 'rosé, bien sûr',            icon: '🌸' },
   { key: 'gt',          label: 'G&T',              hint: 'gin & tonic',               icon: '🧊' },
-  { key: 'rum_coke',    label: 'Rum & Coke',       hint: 'dark rum & cola',           icon: '🥃' },
-  { key: 'vodka_coke',  label: 'Vodka & Coke',     hint: 'vodka & cola',              icon: '🍹' },
-  { key: 'gin_orange',  label: 'Gin & Orange',     hint: 'gin & OJ',                  icon: '🍊' },
-  { key: 'cuba_libre',  label: 'Cuba Libre',       hint: 'rum, cola & lime',          icon: '🌴' },
+  { key: 'rum_coke',        label: 'Rum & Coke',        hint: 'dark rum & cola',          icon: '🥃' },
+  { key: 'rum_coke_zero',   label: 'Rum & Coke Zero',   hint: 'dark rum & Coke Zero',     icon: '🥃' },
+  { key: 'vodka_coke',      label: 'Vodka & Coke',      hint: 'vodka & cola',             icon: '🍹' },
+  { key: 'vodka_coke_zero', label: 'Vodka & Coke Zero', hint: 'vodka & Coke Zero',        icon: '🍹' },
+  { key: 'gin_orange',      label: 'Gin & Orange',      hint: 'gin & OJ',                 icon: '🍊' },
+  { key: 'cuba_libre',      label: 'Cuba Libre',        hint: 'rum, cola & lime',         icon: '🌴' },
+  { key: 'cuba_libre_zero', label: 'Cuba Libre (Zero)', hint: 'rum, Coke Zero & lime',    icon: '🌴' },
   { key: 'skinny_bitch', label: 'Skinny Bitch',   hint: 'vodka & soda',              icon: '💅' },
   { key: 'beer',        label: 'Beer',             hint: 'une bière',                 icon: '🍺' },
   { key: 'sparkling',   label: 'Sparkling Water',  hint: 'eau pétillante',            icon: '💧' },
@@ -37,6 +40,7 @@ const DRINKS = [
   { key: 'mango',       label: 'Mango Juice',      hint: 'jus de mangue',             icon: '🥭' },
   { key: 'lemonade',    label: 'Lemonade',         hint: 'citron pressé',             icon: '🍋' },
   { key: 'cola',        label: 'Cola',             hint: 'Coca, Pepsi…',              icon: '🥤' },
+  { key: 'coke_zero',   label: 'Coke Zero',        hint: 'sugar-free cola',           icon: '🥤' },
 ] as const;
 
 type DrinkKey = typeof DRINKS[number]['key'] | 'later';
