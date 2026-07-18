@@ -101,10 +101,17 @@ _Nothing actively in progress — ready for next feature._
 ## 📋 To-Do / Requested by User
 
 ### 🔜 Next up — requested 2026-07-18
-1. **Add new aperitifs, including Coke Zero** — extend the single master drinks list (`constants/drinks.ts` + `VALID_DRINKS` in `api/[...path].ts` + the `DRINKS` array in `visit.tsx`; ideally consolidate to one source first).
-2. **Restrict the "Run Migrations" and test-user (seed/clear) buttons to the owner only** — currently visible to any admin; should be limited to the primary user (Mark), not all admins.
-3. **Security: fix privilege escalation** — a user can currently make themselves admin. Lock down the role/admin path so non-owners cannot grant themselves admin (`PATCH /api/admin/role/:id` and any client path that sets `is_admin`).
-4. **Quick evening-aperitif change** — make it easy to change tonight's aperitif without editing the whole visit (the app already has a "tonight" drink override via `PATCH /api/visit/drink/:id`; surface a fast one-tap entry point, e.g. from Home or the Family tab, not just inside My Visit while staying).
+1. [x] **Add new aperitifs, including Coke Zero** — done (PR #18).
+2. [x] **Restrict "Run Migrations" + test-user buttons to the owner only** — done via the site-owner concept below.
+3. [x] **Security: fix privilege escalation** — mitigated via the site-owner concept below (only the owner can grant/remove admin; no self-role-change). ⚠️ Residual risk noted below.
+4. [x] **Quick evening-aperitif change** — largely done (PR #19, tap-to-change on My Visit).
+
+### Site Owner (2026-07-18)
+- [x] **`is_owner` concept** — a level above admin. Only owners can run migrations and seed/clear test users (buttons hidden + server-enforced). Default owner = the earliest-created user (Mark); resolved resiliently (`callerIsOwner()`), self-bootstrapping so nobody is locked out before the migration runs.
+- [x] **Assignable** — owners can grant/revoke owner on others via a 👑 toggle on the member card (owner-only); `PATCH /api/admin/owner/:id`; can't remove the last owner. Owners are admins too.
+- [x] **Privilege-escalation hardening** — granting/removing **admin** now requires **owner** authority (`PATCH /api/admin/role/:id`); the admin role chip is disabled for non-owners; the self-role-change guard remains. `isOwner` exposed via `/api/status` + `/api/register`; owner identity only revealed to owners in `/api/family/members`.
+- [ ] ⚠️ **Residual risk / follow-up** — auth is still UUID-in-header (accepted-risk model). A determined family member who obtains a privileged user's UUID (all member UUIDs are returned by `/api/family/members`) could still forge requests. A full fix needs per-request auth (e.g. require PIN re-entry for owner/admin actions, or signed session tokens). Tracked for later.
+- ⚠️ **Requires running migrations after deploy** (adds the `is_owner` column) — the earliest user (Mark) can run it; the Run Migrations button + error-state fallback remain visible to the bootstrap owner.
 
 ### 💡 Future ideas (backlog — not yet scoped)
 _Rough ideas captured 2026-07-18; each needs scoping before implementation._

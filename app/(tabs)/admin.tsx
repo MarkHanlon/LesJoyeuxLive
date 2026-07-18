@@ -121,6 +121,7 @@ type FamilyMember = {
   dropoffTo?: string | null;
   visitStatus?: 'coming' | 'not_coming' | 'undecided' | null;
   room?: string | null;
+  isOwner?: boolean | null;
   isTest?: boolean | null;
 };
 
@@ -536,6 +537,9 @@ function MemberCard({
   removing,
   onRoleChange,
   changingRole,
+  canGrantAdmin,
+  onOwnerToggle,
+  changingOwner,
   onRoomPress,
   roomBusy,
   onPress,
@@ -546,6 +550,9 @@ function MemberCard({
   removing?: boolean;
   onRoleChange?: (role: Role) => void;
   changingRole?: boolean;
+  canGrantAdmin?: boolean;
+  onOwnerToggle?: (makeOwner: boolean) => void;
+  changingOwner?: boolean;
   onRoomPress?: () => void;
   roomBusy?: boolean;
   onPress?: () => void;
@@ -648,16 +655,19 @@ function MemberCard({
           {(['guest', 'staff', 'admin'] as Role[]).map(r => {
             const rc = ROLE_CONFIG[r];
             const active = member.role === r;
+            // Only a site owner may grant or remove the admin role.
+            const lockedAdmin = (r === 'admin' || member.role === 'admin') && !canGrantAdmin;
+            const disabled = active || changingRole || lockedAdmin;
             return (
               <TouchableOpacity
                 key={r}
                 style={[
                   styles.roleChip,
                   active && { backgroundColor: rc.bg, borderColor: rc.border },
-                  changingRole && { opacity: 0.5 },
+                  (changingRole || lockedAdmin) && { opacity: 0.5 },
                 ]}
-                onPress={() => !active && onRoleChange(r)}
-                disabled={active || changingRole}
+                onPress={() => !disabled && onRoleChange(r)}
+                disabled={disabled}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.roleChipText, active && { color: rc.text, fontWeight: '700' }]}>
@@ -667,6 +677,22 @@ function MemberCard({
             );
           })}
         </View>
+      )}
+
+      {/* Site-owner toggle — owners only */}
+      {managing && onOwnerToggle && (
+        <TouchableOpacity
+          style={[styles.ownerRow, member.isOwner && styles.ownerRowActive, changingOwner && { opacity: 0.5 }]}
+          onPress={() => onOwnerToggle(!member.isOwner)}
+          disabled={changingOwner}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.ownerRowLabel}>👑 Site owner</Text>
+          <Text style={[styles.ownerRowValue, member.isOwner && styles.ownerRowValueActive]}>
+            {member.isOwner ? 'Yes — tap to remove' : 'No — tap to make owner'}
+          </Text>
+          {changingOwner && <ActivityIndicator size="small" color="#C85A2E" />}
+        </TouchableOpacity>
       )}
 
       {/* Room allocation — admin manage mode, only for members with a visit */}
@@ -898,6 +924,7 @@ export default function FamilyScreen() {
   const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target
   const [addToRoomKey, setAddToRoomKey] = useState<string | null>(null);         // member picker target
   const [roomBusyId, setRoomBusyId] = useState<string | null>(null);
+  const [ownerBusyId, setOwnerBusyId] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [testDataMessage, setTestDataMessage] = useState<string | null>(null);
@@ -1116,6 +1143,29 @@ export default function FamilyScreen() {
     }
   }
 
+  async function changeOwner(memberId: string, makeOwner: boolean) {
+    if (!user) return;
+    setOwnerBusyId(memberId);
+    try {
+      const res = await fetch(`/api/admin/owner/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ owner: makeOwner }),
+      });
+      if (res.ok) {
+        setMembers(prev => prev.map(m => m.id === memberId
+          ? { ...m, isOwner: makeOwner, ...(makeOwner ? { role: 'admin' as Role, isAdmin: true } : {}) }
+          : m));
+      } else {
+        const body = await res.json().catch(() => ({}));
+        if (Platform.OS === 'web') window.alert(body.error ?? 'Could not change owner');
+        else Alert.alert('Owner', body.error ?? 'Could not change owner');
+      }
+    } finally {
+      setOwnerBusyId(null);
+    }
+  }
+
   async function addEvent(date: string) {
     if (!user || !newTitle.trim()) return;
     setSavingEvent(true);
@@ -1236,6 +1286,9 @@ export default function FamilyScreen() {
             removing={removingIds.has(m.id)}
             onRoleChange={(managing && user?.isAdmin && m.id !== user.id) ? (role) => changeRole(m.id, role) : undefined}
             changingRole={changingRoleIds.has(m.id)}
+            canGrantAdmin={!!user?.isOwner}
+            onOwnerToggle={(managing && user?.isOwner && m.id !== user.id) ? (makeOwner) => changeOwner(m.id, makeOwner) : undefined}
+            changingOwner={ownerBusyId === m.id}
             onRoomPress={(managing && user?.isAdmin) ? () => setRoomForMember(m) : undefined}
             roomBusy={roomBusyId === m.id}
             onPress={() => setSelectedMember(m)}
@@ -1267,7 +1320,7 @@ export default function FamilyScreen() {
         <Text style={styles.allClear}>All caught up — no one waiting 🌿</Text>
       )}
 
-      {user?.isAdmin && (() => {
+      {user?.isOwner && (() => {
         const testCount = members.filter(m => m.isTest).length;
         return (
           <View style={styles.testDataCard}>
@@ -1305,7 +1358,7 @@ export default function FamilyScreen() {
         );
       })()}
 
-      {user?.isAdmin && (
+      {user?.isOwner && (
         <View style={styles.migrateCard}>
           <View style={{ flex: 1 }}>
             <Text style={styles.migrateLabel}>Database migrations</Text>
@@ -1629,7 +1682,7 @@ export default function FamilyScreen() {
           <TouchableOpacity onPress={() => fetchAll()} style={{ marginTop: 16 }}>
             <Text style={styles.retryText}>Tap to retry</Text>
           </TouchableOpacity>
-          {user?.isAdmin && (
+          {user?.isOwner && (
             <View style={[styles.migrateCard, { marginTop: 32 }]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.migrateLabel}>Database migrations</Text>
@@ -1949,6 +2002,18 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
   roomAssignValue: { flex: 1, textAlign: 'right', fontSize: 14, fontWeight: '700', color: '#C85A2E',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+
+  // Site-owner toggle
+  ownerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EDD9A3',
+  },
+  ownerRowActive: {},
+  ownerRowLabel: { fontSize: 14, fontWeight: '600', color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  ownerRowValue: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '600', color: '#8B6245',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  ownerRowValueActive: { color: '#C8973D', fontWeight: '700' },
 
   // Date lens
   roomDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },

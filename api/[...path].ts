@@ -19,6 +19,28 @@ const VALID_DRINKS = new Set([
 ]);
 const VALID_VISIT_STATUS = new Set(['coming', 'not_coming', 'undecided']);
 
+// A "site owner" can run migrations and manage test users — a level above admin.
+// Resolves resiliently so nobody is ever locked out: if the is_owner column
+// isn't there yet (pre-migration) or no owner has been set, the earliest-created
+// user is treated as the bootstrap owner. Once any real owner exists, only a
+// stored is_owner=true grants it.
+async function callerIsOwner(db: any, userId?: string | null): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const [u] = await db`SELECT COALESCE(is_owner, false) AS "isOwner" FROM users WHERE id = ${userId}`;
+    if (!u) return false;
+    if (u.isOwner) return true;
+    const [{ n }] = await db`SELECT COUNT(*)::int AS n FROM users WHERE is_owner = true`;
+    if (n > 0) return false;
+    const [first] = await db`SELECT id FROM users ORDER BY created_at ASC LIMIT 1`;
+    return !!first && first.id === userId;
+  } catch {
+    // is_owner column doesn't exist yet — earliest user bootstraps ownership.
+    const [first] = await db`SELECT id FROM users ORDER BY created_at ASC LIMIT 1`;
+    return !!first && first.id === userId;
+  }
+}
+
 async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const buf = (await scryptAsync(pin, salt, 64)) as Buffer;
@@ -87,7 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(401).json({ error: 'Wrong PIN for this name' });
         }
         await db`UPDATE users SET failed_pin_attempts = 0, pin_locked_until = NULL WHERE id = ${u.id}`.catch(() => {});
-        return res.status(200).json({ id: u.id, name: u.name, status: u.status, isAdmin: u.isAdmin });
+        return res.status(200).json({ id: u.id, name: u.name, status: u.status, isAdmin: u.isAdmin, isOwner: await callerIsOwner(db, u.id) });
       }
       const [{ count }] = await db`SELECT COUNT(*) AS count FROM users`;
       const isFirst = Number(count) === 0;
@@ -104,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           url: '/(tabs)/admin',
         }).catch(() => {});
       }
-      return res.status(201).json(user);
+      return res.status(201).json({ ...user, isOwner: await callerIsOwner(db, user.id) });
     }
 
     // GET /api/family/members
@@ -147,6 +169,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE u.status = 'approved'
         ORDER BY u.name ASC
       `;
+      // Annotate who is a site owner — but only reveal it to owners (keeps owner
+      // identity from leaking). Resilient to the column not existing pre-migration.
+      if (await callerIsOwner(db, userId)) {
+        let ownerIds = new Set<string>();
+        try {
+          const rows = await db`SELECT id FROM users WHERE is_owner = true`;
+          ownerIds = new Set(rows.map((r: any) => r.id));
+        } catch { /* is_owner not migrated yet */ }
+        return res.status(200).json(members.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
+      }
       return res.status(200).json(members);
     }
 
@@ -276,7 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE  id = ${seg1}
       `;
       if (!user) return res.status(404).json({ error: 'User not found' });
-      return res.status(200).json(user);
+      return res.status(200).json({ ...user, isOwner: await callerIsOwner(db, seg1) });
     }
 
     // GET /api/admin/users
@@ -337,14 +369,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // PATCH /api/admin/role/:id
     if (seg0 === 'admin' && seg1 === 'role' && seg2) {
       if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
-      const adminId = req.headers['x-admin-id'] as string | undefined;
-      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
-      if (seg2 === adminId) return res.status(400).json({ error: 'Cannot change your own role' });
+      const callerId = (req.headers['x-user-id'] ?? req.headers['x-admin-id']) as string | undefined;
+      if (!callerId) return res.status(401).json({ error: 'Unauthorized' });
+      if (seg2 === callerId) return res.status(400).json({ error: 'Cannot change your own role' });
       const { role } = req.body ?? {};
       if (!VALID_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });
       const db = getDb();
-      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
-      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      const [caller] = await db`SELECT is_admin AS "isAdmin" FROM users WHERE id = ${callerId}`;
+      if (!caller?.isAdmin) return res.status(403).json({ error: 'Forbidden' });
+      // Granting or removing ADMIN requires site-owner authority — a regular admin
+      // cannot create or demote admins (closes the self-promotion path).
+      const [target] = await db`SELECT is_admin AS "isAdmin" FROM users WHERE id = ${seg2}`;
+      const touchesAdmin = role === 'admin' || !!target?.isAdmin;
+      if (touchesAdmin && !(await callerIsOwner(db, callerId)))
+        return res.status(403).json({ error: 'Only the site owner can grant or remove admin' });
       await db`
         UPDATE users
         SET role     = ${role},
@@ -352,6 +390,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE id = ${seg2}
       `;
       return res.status(200).json({ ok: true });
+    }
+
+    // PATCH /api/admin/owner/:id — grant or revoke site-owner (owner only)
+    if (seg0 === 'admin' && seg1 === 'owner' && seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const callerId = (req.headers['x-user-id'] ?? req.headers['x-admin-id']) as string | undefined;
+      if (!callerId) return res.status(401).json({ error: 'Unauthorized' });
+      const db = getDb();
+      if (!(await callerIsOwner(db, callerId))) return res.status(403).json({ error: 'Site owner only' });
+      const makeOwner = !!(req.body ?? {}).owner;
+      if (makeOwner) {
+        // Owners are admins too.
+        await db`UPDATE users SET is_owner = true, is_admin = true, role = 'admin' WHERE id = ${seg2}`;
+      } else {
+        const [{ n }] = await db`SELECT COUNT(*)::int AS n FROM users WHERE is_owner = true`;
+        const [tgt] = await db`SELECT COALESCE(is_owner, false) AS "isOwner" FROM users WHERE id = ${seg2}`;
+        if (tgt?.isOwner && n <= 1) return res.status(400).json({ error: 'There must always be at least one site owner' });
+        await db`UPDATE users SET is_owner = false WHERE id = ${seg2}`;
+      }
+      return res.status(200).json({ ok: true, owner: makeOwner });
     }
 
     // PATCH /api/admin/room/:id — allocate (or clear) a room for a member's visit
@@ -565,11 +623,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // POST|DELETE /api/admin/test-users
     if (seg0 === 'admin' && seg1 === 'test-users' && !seg2) {
-      const adminId = req.headers['x-admin-id'] as string | undefined;
-      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+      const tuCallerId = (req.headers['x-user-id'] ?? req.headers['x-admin-id']) as string | undefined;
+      if (!tuCallerId) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
-      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
-      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      if (!(await callerIsOwner(db, tuCallerId))) return res.status(403).json({ error: 'Site owner only' });
       await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false`;
 
       if (method === 'DELETE') {
@@ -657,11 +714,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST /api/migrate
     if (seg0 === 'migrate' && !seg1) {
       if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-      const migrateAdminId = req.headers['x-admin-id'] as string | undefined;
-      if (!migrateAdminId) return res.status(401).json({ error: 'Unauthorized' });
+      const migrateCallerId = (req.headers['x-user-id'] ?? req.headers['x-admin-id']) as string | undefined;
+      if (!migrateCallerId) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
-      const [migrateAdmin] = await db`SELECT id FROM users WHERE id = ${migrateAdminId} AND is_admin = true`;
-      if (!migrateAdmin) return res.status(403).json({ error: 'Forbidden' });
+      if (!(await callerIsOwner(db, migrateCallerId))) return res.status(403).json({ error: 'Site owner only' });
       await db`
         CREATE TABLE IF NOT EXISTS users (
           id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -685,7 +741,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false`;
       await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_pin_attempts INT NOT NULL DEFAULT 0`;
       await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_locked_until TIMESTAMPTZ`;
+      await db`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_owner BOOLEAN NOT NULL DEFAULT false`;
       await db`UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'guest'`;
+      // Bootstrap the site owner: the earliest-created user, only if none set yet.
+      await db`
+        UPDATE users SET is_owner = true
+        WHERE id = (SELECT id FROM users ORDER BY created_at ASC LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM users WHERE is_owner = true)
+      `;
       await db`
         CREATE TABLE IF NOT EXISTS visits (
           id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
