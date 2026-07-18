@@ -1,0 +1,52 @@
+// Master list of the château's rooms — the single source of truth.
+// Pure module (no React Native imports) so both the Expo app and the Vercel
+// API function can import it. The API must import by RELATIVE path
+// (`../constants/rooms`), not the `@/` alias, which the function build doesn't resolve.
+
+export const ROOMS = [
+  { key: 'attic',          label: 'Attic' },
+  { key: 'cottage_1',      label: 'Cottage One' },
+  { key: 'cottage_2',      label: 'Cottage Two' },
+  { key: 'cottage_3',      label: 'Cottage Three' },
+  { key: 'emmas',          label: "Emma's",         owner: 'Emma' },
+  { key: 'gite_1',         label: 'Gîte One' },
+  { key: 'gite_2',         label: 'Gîte Two' },
+  { key: 'yellow',         label: 'Yellow',         owner: 'Lise' },
+  { key: 'master',         label: 'Master' },
+  { key: 'posh',           label: 'Posh',           owner: 'Natalie' },
+  { key: 'peach',          label: 'Peach' },
+  { key: 'princess_tower', label: 'Princess Tower' },
+  { key: 'roos',           label: "Roo's",          owner: 'Roo' },
+  { key: 'blue',           label: 'Blue',           owner: 'Sarah' },
+  { key: 'twin',           label: 'Twin' },
+  { key: 'family_room',    label: 'Family Room' },
+  { key: 'chapel',         label: 'Chapel' },
+] as const;
+
+export type RoomKey = typeof ROOMS[number]['key'];
+
+export const ROOM_LABELS: Record<string, string> =
+  Object.fromEntries(ROOMS.map(r => [r.key, r.label]));
+
+export const VALID_ROOM_KEYS = new Set<string>(ROOMS.map(r => r.key));
+
+export const roomLabel = (k?: string | null): string | null =>
+  k ? ROOM_LABELS[k] ?? k : null;
+
+// Auto-assign (owned rooms): owner first-name → their room key, e.g. { lise: 'yellow' }.
+const OWNER_ROOM: Record<string, string> = Object.fromEntries(
+  ROOMS.filter((r): r is typeof r & { owner: string } => 'owner' in r)
+       .map(r => [r.owner.toLowerCase(), r.key]),
+);
+
+// The room a person defaults to (their owned room) when no explicit room is set.
+// Keyed on first name; returns null for non-owners.
+export const defaultRoomForName = (name?: string | null): string | null => {
+  if (!name) return null;
+  const first = name.trim().split(/\s+/)[0].toLowerCase();
+  return OWNER_ROOM[first] ?? null;
+};
+
+// The effective room for a person: an explicit allocation wins over the owner default.
+export const effectiveRoom = (explicit?: string | null, name?: string | null): string | null =>
+  explicit ?? defaultRoomForName(name);
