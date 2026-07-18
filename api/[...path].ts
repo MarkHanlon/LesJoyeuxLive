@@ -11,7 +11,7 @@ const VALID_ROLES = ['guest', 'staff', 'admin'];
 const VALID_DRINKS = new Set([
   'pastis', 'red_wine', 'white_wine', 'rose', 'gt',
   'rum_coke', 'vodka_coke', 'gin_orange', 'cuba_libre', 'skinny_bitch',
-  'beer', 'sparkling', 'oj', 'lemonade', 'cola', 'later',
+  'beer', 'sparkling', 'oj', 'mango', 'lemonade', 'cola', 'later',
   // kept for backward-compat display of existing records
   'kir', 'kir_royale', 'cremant', 'lillet', 'suze',
 ]);
