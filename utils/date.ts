@@ -34,6 +34,15 @@ export function addDays(dateStr: string, days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Monday-based week boundaries (YYYY-MM-DD in, YYYY-MM-DD out).
+export function startOfWeek(dateStr: string): string {
+  const day = new Date(dateStr + 'T12:00:00').getDay(); // 0 Sun … 6 Sat
+  return addDays(dateStr, day === 0 ? -6 : 1 - day);
+}
+export function endOfWeek(dateStr: string): string {
+  return addDays(startOfWeek(dateStr), 6);
+}
+
 export function datesBetween(from: string, to: string): string[] {
   const dates: string[] = [];
   const cur = new Date(from + 'T12:00:00');
