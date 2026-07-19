@@ -1,8 +1,9 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   Modal,
   Platform,
@@ -18,7 +19,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
 import { ROOMS, roomLabel, effectiveRoom } from '../../constants/rooms';
-import { addDays, datesBetween, daysUntil, formatDate, formatDateLong, slotLabel, todayStr } from '../../utils/date';
+import { addDays, datesBetween, daysUntil, endOfWeek, formatDate, formatDateLong, slotLabel, startOfWeek, todayStr } from '../../utils/date';
 import { avatarColor, initials } from '../../utils/ui';
 
 const ADMIN_DAYS_BEFORE = 7;
@@ -864,37 +865,6 @@ function RoomPickerModal({ member, busy, onPick, onClose }: {
   );
 }
 
-// Pick a member to add to a given room (admin only).
-function MemberPickerModal({ roomKey, members, onPick, onClose }: {
-  roomKey: string | null;
-  members: FamilyMember[];
-  onPick: (memberId: string) => void;
-  onClose: () => void;
-}) {
-  if (!roomKey) return null;
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
-          <Text style={styles.roomSheetTitle}>Add to {roomLabel(roomKey)}</Text>
-          {members.length === 0 ? (
-            <Text style={styles.roomSheetEmpty}>Nobody with a visit on this date to add.</Text>
-          ) : (
-            <ScrollView style={{ maxHeight: 400 }}>
-              {members.map(m => (
-                <TouchableOpacity key={m.id} style={styles.roomSheetRow} onPress={() => onPick(m.id)} activeOpacity={0.7}>
-                  <Text style={styles.roomSheetRowText}>{m.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
 export default function FamilyScreen() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('people');
@@ -921,10 +891,12 @@ export default function FamilyScreen() {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
-  const [roomDate, setRoomDate] = useState<string>(todayStr());   // date lens for the Rooms tab
-  const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target
-  const [addToRoomKey, setAddToRoomKey] = useState<string | null>(null);         // member picker target
+  const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target (People tab)
   const [roomBusyId, setRoomBusyId] = useState<string | null>(null);
+  // Rooms timeline
+  const [screenW, setScreenW] = useState(Dimensions.get('window').width);
+  const roomsBodyScrollRef = useRef<ScrollView>(null);
+  const roomsHeadScrollRef = useRef<ScrollView>(null);
   const [ownerBusyId, setOwnerBusyId] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -1536,86 +1508,163 @@ export default function FamilyScreen() {
     );
   };
 
-  // ── Rooms tab helpers ──
-  const visitingOn = (m: FamilyMember, date: string) =>
-    !!(m.arriveDate && m.departDate &&
-       String(m.arriveDate).slice(0, 10) <= date && date <= String(m.departDate).slice(0, 10));
-  const occupantsOf = (roomKey: string, date: string) =>
-    members.filter(m => visitingOn(m, date) && effectiveRoom(m.room, m.name) === roomKey);
-  const eligibleForRoom = (roomKey: string) =>
-    members.filter(m => visitingOn(m, roomDate) && effectiveRoom(m.room, m.name) !== roomKey);
+  // ── Rooms timeline ──
+  const ROOM_COL_W = 70;
+  const WHO_COL_W = 64;
+  const LEFT_W = ROOM_COL_W + WHO_COL_W;
+  const ROW_H = 44;
+  const dayWidth = Math.max(30, Math.floor((screenW - LEFT_W) / 7));
 
-  const renderRoomsTab = () => (
-    <ScrollView
-      contentContainerStyle={styles.listContent}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => fetchAll(true)} tintColor="#C85A2E" />}
-    >
-      {/* Date lens */}
-      <View style={styles.roomDateRow}>
-        <TouchableOpacity onPress={() => setRoomDate(d => addDays(d, -1))} style={styles.roomDateNav} activeOpacity={0.7}>
-          <Text style={styles.roomDateArrow}>‹</Text>
-        </TouchableOpacity>
-        <View style={styles.roomDateCenter}>
-          <Text style={styles.roomDateText}>{formatDateLong(roomDate)}</Text>
-          {roomDate !== todayStr() && (
-            <TouchableOpacity onPress={() => setRoomDate(todayStr())} activeOpacity={0.7}>
-              <Text style={styles.roomDateToday}>Jump to today</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        <TouchableOpacity onPress={() => setRoomDate(d => addDays(d, 1))} style={styles.roomDateNav} activeOpacity={0.7}>
-          <Text style={styles.roomDateArrow}>›</Text>
-        </TouchableOpacity>
-      </View>
+  // Keep dayWidth responsive to rotation / resize.
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => setScreenW(window.width));
+    return () => { (sub as any)?.remove?.(); };
+  }, []);
 
-      {ROOMS.map(room => {
-        const occ = occupantsOf(room.key, roomDate);
-        const owner = 'owner' in room ? room.owner : null;
-        return (
-          <View key={room.key} style={styles.roomCard}>
-            <View style={styles.roomCardHead}>
-              <Text style={styles.roomName}>🛏  {room.label}</Text>
-              {owner && <Text style={styles.roomOwner}>{owner}'s</Text>}
+  const roomTimeline = useMemo(() => {
+    const allocated = members.filter(m => m.arriveDate && m.departDate && effectiveRoom(m.room, m.name));
+    const byRoom: Record<string, FamilyMember[]> = {};
+    allocated.forEach(m => {
+      const k = effectiveRoom(m.room, m.name)!;
+      (byRoom[k] ||= []).push(m);
+    });
+    const today = todayStr();
+    const arr = allocated.map(m => String(m.arriveDate).slice(0, 10));
+    const dep = allocated.map(m => String(m.departDate).slice(0, 10));
+    const minA = arr.length ? arr.reduce((a, b) => (a < b ? a : b)) : today;
+    const maxD = dep.length ? dep.reduce((a, b) => (a > b ? a : b)) : today;
+    const spanStart = startOfWeek(minA < today ? minA : today);
+    const spanEnd = endOfWeek(maxD > today ? maxD : today);
+    return { byRoom, days: datesBetween(spanStart, spanEnd), today };
+  }, [members]);
+
+  const occCount = (roomKey: string, date: string) =>
+    (roomTimeline.byRoom[roomKey] ?? []).filter(m =>
+      String(m.arriveDate).slice(0, 10) <= date && date <= String(m.departDate).slice(0, 10)).length;
+  const whoIn = (roomKey: string) => roomTimeline.byRoom[roomKey] ?? [];
+  const shadeForCount = (n: number) => (n >= 3 ? styles.tlBar3 : n === 2 ? styles.tlBar2 : styles.tlBar1);
+
+  // Open the Rooms timeline on the current week.
+  useEffect(() => {
+    if (activeTab !== 'rooms') return;
+    const { days, today } = roomTimeline;
+    const ti = days.indexOf(today);
+    const x = (ti >= 0 ? Math.floor(ti / 7) * 7 : 0) * dayWidth;
+    const id = setTimeout(() => {
+      roomsBodyScrollRef.current?.scrollTo({ x, animated: false });
+      roomsHeadScrollRef.current?.scrollTo({ x, animated: false });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [activeTab, roomTimeline, dayWidth]);
+
+  const renderRoomsTab = () => {
+    const { days, today } = roomTimeline;
+    const contentW = days.length * dayWidth;
+    const dObj = (d: string) => new Date(d + 'T12:00:00');
+    const wdInitial = (d: string) => ['S', 'M', 'T', 'W', 'T', 'F', 'S'][dObj(d).getDay()];
+    const isWeekend = (d: string) => { const g = dObj(d).getDay(); return g === 0 || g === 6; };
+
+    return (
+      <View style={styles.tlContainer}>
+        {/* Header: corner + scrollable dates */}
+        <View style={styles.tlHeaderRow}>
+          <View style={[styles.tlCorner, { width: LEFT_W }]}>
+            <Text style={styles.tlCornerText}>ROOM</Text>
+            <Text style={styles.tlCornerText}>WHO</Text>
+          </View>
+          <ScrollView
+            horizontal
+            ref={roomsHeadScrollRef}
+            scrollEnabled={false}
+            showsHorizontalScrollIndicator={false}
+            style={{ width: screenW - LEFT_W }}
+          >
+            <View style={{ flexDirection: 'row', width: contentW }}>
+              {days.map(d => (
+                <View key={d} style={[styles.tlHeadCell, { width: dayWidth }, isWeekend(d) && styles.tlWeekend, d === today && styles.tlTodayCol]}>
+                  <Text style={[styles.tlHeadWd, d === today && styles.tlTodayText]}>{wdInitial(d)}</Text>
+                  <Text style={[styles.tlHeadDay, d === today && styles.tlTodayText]}>{dObj(d).getDate()}</Text>
+                </View>
+              ))}
             </View>
-            {occ.length === 0 ? (
-              <Text style={styles.roomFree}>— Free —</Text>
-            ) : (
-              <View style={styles.roomOccupants}>
-                {occ.map(m => (
-                  <TouchableOpacity
-                    key={m.id}
-                    disabled={!user?.isAdmin || roomBusyId === m.id}
-                    onPress={() => setRoomForMember(m)}
-                    style={styles.roomOccupant}
-                    activeOpacity={0.7}
-                  >
-                    {m.avatar
-                      ? <Image source={{ uri: m.avatar }} style={styles.roomAvatar} />
-                      : <View style={[styles.roomAvatar, styles.roomAvatarFallback, { backgroundColor: avatarColor(m.name) }]}>
-                          <Text style={styles.roomAvatarInitials}>{initials(m.name)}</Text>
-                        </View>}
-                    <Text style={styles.roomOccupantName}>{m.name.split(' ')[0]}</Text>
-                    {roomBusyId === m.id && <ActivityIndicator size="small" color="#C85A2E" />}
-                  </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* Body: fixed left columns + horizontally-scrollable bars */}
+        <ScrollView
+          style={{ flex: 1 }}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => fetchAll(true)} tintColor="#C85A2E" />}
+        >
+          <View style={{ flexDirection: 'row' }}>
+            <View style={{ width: LEFT_W }}>
+              {ROOMS.map(room => {
+                const who = whoIn(room.key);
+                const owner = 'owner' in room ? room.owner : null;
+                return (
+                  <View key={room.key} style={[styles.tlLeftRow, { height: ROW_H, width: LEFT_W }]}>
+                    <View style={{ width: ROOM_COL_W - 8, paddingRight: 4 }}>
+                      <Text style={styles.tlRoomName} numberOfLines={1}>{room.label}</Text>
+                      {owner && <Text style={styles.tlRoomOwner} numberOfLines={1}>{owner}'s</Text>}
+                    </View>
+                    <View style={styles.tlWho}>
+                      {who.slice(0, 3).map(m => (
+                        <TouchableOpacity key={m.id} onPress={() => setSelectedMember(m)} activeOpacity={0.7}>
+                          {m.avatar
+                            ? <Image source={{ uri: m.avatar }} style={styles.tlChip} />
+                            : <View style={[styles.tlChip, styles.tlChipFallback, { backgroundColor: avatarColor(m.name) }]}>
+                                <Text style={styles.tlChipText}>{initials(m.name)}</Text>
+                              </View>}
+                        </TouchableOpacity>
+                      ))}
+                      {who.length > 3 && <Text style={styles.tlWhoMore}>+{who.length - 3}</Text>}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            <ScrollView
+              horizontal
+              ref={roomsBodyScrollRef}
+              onScroll={e => roomsHeadScrollRef.current?.scrollTo({ x: e.nativeEvent.contentOffset.x, animated: false })}
+              scrollEventThrottle={16}
+              snapToInterval={dayWidth * 7}
+              decelerationRate="fast"
+              showsHorizontalScrollIndicator={false}
+              style={{ width: screenW - LEFT_W }}
+            >
+              <View style={{ width: contentW }}>
+                {ROOMS.map(room => (
+                  <View key={room.key} style={[styles.tlBarRow, { height: ROW_H, width: contentW }]}>
+                    {days.map(d => {
+                      const n = occCount(room.key, d);
+                      return (
+                        <View key={d} style={[styles.tlCell, { width: dayWidth }, isWeekend(d) && styles.tlWeekend, d === today && styles.tlTodayCol]}>
+                          {n > 0 && (
+                            <View style={[styles.tlBar, shadeForCount(n)]}>
+                              {n >= 2 && <Text style={styles.tlBarCount}>{n}</Text>}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
                 ))}
               </View>
-            )}
-            {user?.isAdmin && (
-              <TouchableOpacity style={styles.roomAddBtn} onPress={() => setAddToRoomKey(room.key)} activeOpacity={0.75}>
-                <Text style={styles.roomAddBtnText}>＋ Add someone</Text>
-              </TouchableOpacity>
-            )}
+            </ScrollView>
           </View>
-        );
-      })}
 
-      <Text style={styles.roomsHint}>
-        {user?.isAdmin
-          ? 'Tap a person to move or remove them. A room is booked for a person’s whole stay; the date only changes what you see.'
-          : 'Room allocations are managed by the family admins.'}
-      </Text>
-    </ScrollView>
-  );
+          {/* Legend */}
+          <View style={styles.tlLegend}>
+            <View style={[styles.tlLegendSwatch, styles.tlBar1]} /><Text style={styles.tlLegendText}>1</Text>
+            <View style={[styles.tlLegendSwatch, styles.tlBar2]} /><Text style={styles.tlLegendText}>2</Text>
+            <View style={[styles.tlLegendSwatch, styles.tlBar3]} /><Text style={styles.tlLegendText}>3+</Text>
+            <Text style={styles.tlLegendHint}>shade = people sharing · swipe for other weeks · set rooms on the People tab</Text>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -1717,12 +1766,6 @@ export default function FamilyScreen() {
         busy={!!roomForMember && roomBusyId === roomForMember.id}
         onPick={(key) => { if (roomForMember) changeRoom(roomForMember.id, key); setRoomForMember(null); }}
         onClose={() => setRoomForMember(null)}
-      />
-      <MemberPickerModal
-        roomKey={addToRoomKey}
-        members={addToRoomKey ? eligibleForRoom(addToRoomKey) : []}
-        onPick={(memberId) => { if (addToRoomKey) changeRoom(memberId, addToRoomKey); setAddToRoomKey(null); }}
-        onClose={() => setAddToRoomKey(null)}
       />
     </View>
   );
@@ -2008,43 +2051,53 @@ const styles = StyleSheet.create({
   ownerChipActive: { backgroundColor: '#FBEFD0', borderColor: '#C8973D' },
   ownerChipTextActive: { color: '#8A6D1F', fontWeight: '700' },
 
-  // Date lens
-  roomDateRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
-  roomDateNav: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
-  roomDateArrow: { fontSize: 28, color: '#C85A2E', lineHeight: 34 },
-  roomDateCenter: { flex: 1, alignItems: 'center' },
-  roomDateText: { fontSize: 16, fontWeight: '700', color: '#1A1209',
-    fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
-  roomDateToday: { fontSize: 12, color: '#C85A2E', textDecorationLine: 'underline', marginTop: 2,
-    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-
-  // Room card
-  roomCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginTop: 12,
-    borderWidth: 1, borderColor: '#EDD9A3',
+  // Rooms occupancy timeline
+  tlContainer: { flex: 1, backgroundColor: '#F5EDD6' },
+  tlHeaderRow: { flexDirection: 'row', backgroundColor: '#FAF4E6', borderBottomWidth: 1, borderBottomColor: '#EDD9A3' },
+  tlCorner: {
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+    paddingHorizontal: 8, paddingBottom: 4, paddingTop: 8,
+    borderRightWidth: 1, borderRightColor: '#EDD9A3',
   },
-  roomCardHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  roomName: { flex: 1, fontSize: 17, fontWeight: '700', color: '#1A1209',
-    fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
-  roomOwner: { fontSize: 12, fontWeight: '700', color: '#C8973D', letterSpacing: 0.5,
+  tlCornerText: { fontSize: 9, fontWeight: '700', color: '#C8973D', letterSpacing: 1,
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-  roomFree: { fontSize: 13, color: '#B8956A', fontStyle: 'italic', marginTop: 8,
-    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-  roomOccupants: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  roomOccupant: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FAF4E6', borderRadius: 999, paddingVertical: 5, paddingHorizontal: 10,
-    borderWidth: 1, borderColor: '#EDD9A3',
+  tlHeadCell: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 5,
+    borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#EDD9A3',
   },
-  roomAvatar: { width: 24, height: 24, borderRadius: 12 },
-  roomAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
-  roomAvatarInitials: { fontSize: 10, fontWeight: '700', color: '#fff' },
-  roomOccupantName: { fontSize: 13, fontWeight: '600', color: '#1A1209',
+  tlHeadWd: { fontSize: 9, fontWeight: '700', color: '#8B6245' },
+  tlHeadDay: { fontSize: 12, fontWeight: '700', color: '#1A1209' },
+  tlWeekend: { backgroundColor: '#EFE4C4' },
+  tlTodayCol: { borderLeftWidth: 2, borderLeftColor: '#C85A2E' },
+  tlTodayText: { color: '#C85A2E' },
+  tlLeftRow: {
+    flexDirection: 'row', alignItems: 'center', paddingLeft: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EDD9A3',
+    borderRightWidth: 1, borderRightColor: '#EDD9A3', backgroundColor: '#FFFDF7',
+  },
+  tlRoomName: { fontSize: 12, fontWeight: '700', color: '#1A1209',
+    fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
+  tlRoomOwner: { fontSize: 8, fontWeight: '700', color: '#C8973D',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-  roomAddBtn: { marginTop: 12, paddingVertical: 9, borderRadius: 999, borderWidth: 1.5, borderColor: '#C85A2E', alignItems: 'center' },
-  roomAddBtnText: { fontSize: 13, fontWeight: '700', color: '#C85A2E',
-    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
-  roomsHint: { fontSize: 12, color: '#8B6245', marginTop: 18, textAlign: 'center', lineHeight: 18,
+  tlWho: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2, paddingRight: 4 },
+  tlChip: { width: 20, height: 20, borderRadius: 10 },
+  tlChipFallback: { alignItems: 'center', justifyContent: 'center' },
+  tlChipText: { fontSize: 8, fontWeight: '700', color: '#fff' },
+  tlWhoMore: { fontSize: 9, fontWeight: '700', color: '#8B6245', marginLeft: 1 },
+  tlBarRow: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EDD9A3' },
+  tlCell: {
+    alignItems: 'center', justifyContent: 'center',
+    borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#F0E6CC',
+  },
+  tlBar: { position: 'absolute', left: 0, right: 0, top: 9, bottom: 9, alignItems: 'center', justifyContent: 'center' },
+  tlBar1: { backgroundColor: '#EAD3A7' },
+  tlBar2: { backgroundColor: '#D99C5B' },
+  tlBar3: { backgroundColor: '#C97C3D' },
+  tlBarCount: { fontSize: 10, fontWeight: '800', color: '#4A2E12' },
+  tlLegend: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 14, flexWrap: 'wrap' },
+  tlLegendSwatch: { width: 16, height: 12, borderRadius: 3 },
+  tlLegendText: { fontSize: 11, fontWeight: '700', color: '#8B6245', marginRight: 6 },
+  tlLegendHint: { fontSize: 11, color: '#B8956A', flexShrink: 1, minWidth: 150,
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
 
   // Room / member picker sheet

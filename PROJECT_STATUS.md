@@ -160,7 +160,8 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 - [x] **Auto-assigned owners** — an owner (matched by first name) shows in their room automatically when they have a visit; an explicit allocation overrides it (`effectiveRoom()` helper). No background DB write.
 - [x] **Rooms sub-tab** on the Family tab (People / Events / Rooms) — a date-pinned list of all rooms showing who's in each on the chosen day (‹ › date lens). Read-only for everyone; admins get ＋Add someone per room and can tap an occupant to move/clear. Also a room picker on the member card in Manage mode.
 - [x] **Whole-visit booking** — the date picker is only a viewing lens; a room is booked for a person's entire stay. Not-coming/undecided members (no dates) never appear.
-- [ ] Follow-ups: occupancy timeline grid; print schedule by room/date.
+- [x] **Occupancy timeline (Rooms tab redesign, 2026-07-19)** — the Rooms tab is now a read-only week-view chart: two frozen left columns (Room | Who = coloured initials), a horizontally scrollable 7-day timeline (snaps by week, sticky date header synced to the body, opens on the current week, today marker, weekend tint). One bar per room whose **shade deepens with occupant count** (1/2/3+, small count for ≥2) so you can see a room go from one person to two when a partner arrives mid-stay. Allocation stays on the People-tab member card (＋Add-from-room removed).
+- [ ] Follow-up: print schedule by room/date.
 
 ### My Visit — Year Title & Attendance Status (2026-07-13)
 - [x] **Year in title** — My Visit page header now reads "My {current year} Visit".
