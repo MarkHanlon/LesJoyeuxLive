@@ -35,11 +35,11 @@ Working agreements and decisions that aren't obvious from the code. A new sessio
 
 | Build stamp (live site) | Commit | Features tested | Result |
 |---|---|---|---|
-| _(pending — first build with stamp)_ | 5ff1dec | Build stamp, THEME fix, aperitif labels, Events tab date diagnostic | 🕐 Not yet tested |
-| _(pending)_ | 86f8293 | Auto-refresh (focus + interval + foreground + push nudge) | 🕐 Not yet tested |
-| _(pending)_ | 20c404c | Android Events scroll-jump fix | 🕐 Not yet tested |
-| _(pending)_ | f69df6d | Cold-open Home fetch (no 30s delay) | 🕐 Not yet tested |
-| _(pending)_ | (visit-status) | My {year} Visit title + not-coming/undecided status | 🕐 Not yet tested |
+| _(pending — first build with stamp)_ | 5ff1dec | Build stamp, THEME fix, aperitif labels, Events tab date diagnostic | ✅ Pass |
+| _(pending)_ | 86f8293 | Auto-refresh (focus + interval + foreground + push nudge) | ✅ Pass |
+| _(pending)_ | 20c404c | Android Events scroll-jump fix | ✅ Pass |
+| _(pending)_ | f69df6d | Cold-open Home fetch (no 30s delay) | ✅ Pass |
+| _(pending)_ | (visit-status) | My {year} Visit title + not-coming/undecided status | ✅ Pass |
 | _(pending)_ | (rooms) | Room allocation (Rooms sub-tab, admin assign, auto-owner) | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
@@ -190,6 +190,7 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 - [x] **Rooms sub-tab** on the Family tab (People / Events / Rooms) — a date-pinned list of all rooms showing who's in each on the chosen day (‹ › date lens). Read-only for everyone; admins get ＋Add someone per room and can tap an occupant to move/clear. Also a room picker on the member card in Manage mode.
 - [x] **Whole-visit booking** — the date picker is only a viewing lens; a room is booked for a person's entire stay. Not-coming/undecided members (no dates) never appear.
 - [x] **Occupancy timeline (Rooms tab redesign, 2026-07-19)** — the Rooms tab is now a read-only week-view chart: two frozen left columns (Room | Who = coloured initials), a horizontally scrollable 7-day timeline (snaps by week, sticky date header synced to the body, opens on the current week, today marker, weekend tint). One bar per room whose **shade deepens with occupant count** (1/2/3+, small count for ≥2) so you can see a room go from one person to two when a partner arrives mid-stay. Allocation stays on the People-tab member card (＋Add-from-room removed).
+- [x] **Rooms timeline scroll-reset fix (2026-07-22)** — the "open on current week" effect in `admin.tsx` listed `roomTimeline` in its deps; since `roomTimeline` is a `useMemo([members])` and every background poll replaces `members` with a fresh array, the effect re-fired every ~20-30s and `scrollTo`'d back to the current week (x=0 while today sits in the first week) — horizontally yanking the timeline to the far left mid-scroll. Fixed with a `roomsCenteredRef` guard so centring runs **once per tab activation / layout-width change**, never on a background refresh. This is the horizontal counterpart of the Auto-Refresh Gotcha.
 - [ ] Follow-up: print schedule by room/date.
 
 ### My Visit — Year Title & Attendance Status (2026-07-13)
@@ -301,6 +302,7 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 - Any screen wired to `useAutoRefresh` (or otherwise polling) **must not toggle a loading spinner, unmount, or otherwise collapse list content on a background poll** — only on the first load or a manual pull-to-refresh.
 - Why: on **Android**, when a `ScrollView`/`FlatList`'s content height shrinks below the current scroll offset (e.g. swapping a long list for a small spinner), the platform clamps the scroll position back to the top. **iOS tolerates it**, so this bug is invisible on iPhone and only shows on Android.
 - Precedent: the Events list in `app/(tabs)/admin.tsx` hit exactly this — fixed by gating `setEventsLoading(true)` behind a first-load `useRef` so polls update the list in place (stable per-item keys, unchanged height). Follow the same pattern for any future auto-refreshing list.
+- **Same trap, horizontal axis (2026-07-22):** the Rooms timeline reset its *horizontal* scroll to the far left on every poll — not because content collapsed, but because a "scroll to current week" `useEffect` depended on `roomTimeline` (rebuilt each poll) and re-ran its `scrollTo`. Fix: guard one-shot scroll-positioning effects with a `useRef` so they fire on tab-open / resize only, never on a background data rebuild. Never key a `scrollTo` effect on a value that a poll reconstructs.
 
 ### Known Issues
 - `app.json` has two invalid schema fields flagged by `expo-doctor`: `newArchEnabled` (top-level) and `android.edgeToEdgeEnabled` — safe to remove on next cleanup pass

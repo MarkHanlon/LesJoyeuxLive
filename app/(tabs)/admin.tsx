@@ -897,6 +897,9 @@ export default function FamilyScreen() {
   const [screenW, setScreenW] = useState(Dimensions.get('window').width);
   const roomsBodyScrollRef = useRef<ScrollView>(null);
   const roomsHeadScrollRef = useRef<ScrollView>(null);
+  // True once we've centred the timeline for the current tab activation, so
+  // background refreshes (which rebuild roomTimeline) don't reset scroll.
+  const roomsCenteredRef = useRef(false);
   const [ownerBusyId, setOwnerBusyId] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -1558,10 +1561,19 @@ export default function FamilyScreen() {
   const whoIn = (roomKey: string) => roomTimeline.byRoom[roomKey] ?? [];
   const shadeForCount = (n: number) => (n >= 3 ? styles.tlBar3 : n === 2 ? styles.tlBar2 : styles.tlBar1);
 
-  // Open the Rooms timeline on the current week.
+  // Re-arm the "open on current week" centring whenever the tab is (re)entered
+  // or the layout width changes (rotation/resize) — but NOT on a background data
+  // refresh, so a poll can't yank the timeline back to the far left mid-scroll.
+  useEffect(() => { roomsCenteredRef.current = false; }, [activeTab, dayWidth]);
+
+  // Open the Rooms timeline on the current week — once per activation, after data
+  // is present. The roomTimeline dep lets this fire when the first load arrives;
+  // the ref guard stops it re-firing on subsequent (background) rebuilds.
   useEffect(() => {
-    if (activeTab !== 'rooms') return;
+    if (activeTab !== 'rooms' || roomsCenteredRef.current) return;
     const { days, today } = roomTimeline;
+    if (days.length === 0) return;
+    roomsCenteredRef.current = true;
     const ti = days.indexOf(today);
     const x = (ti >= 0 ? Math.floor(ti / 7) * 7 : 0) * dayWidth;
     const id = setTimeout(() => {
