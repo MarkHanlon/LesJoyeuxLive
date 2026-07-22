@@ -1509,9 +1509,9 @@ export default function FamilyScreen() {
   };
 
   // ── Rooms timeline ──
-  const ROOM_COL_W = 70;
-  const WHO_COL_W = 64;
-  const LEFT_W = ROOM_COL_W + WHO_COL_W;
+  const ROOM_COL_W = 96;
+  const WHO_COL_W = 38;
+  const LEFT_W = ROOM_COL_W + WHO_COL_W;   // 134 total — unchanged
   const ROW_H = 44;
   const dayWidth = Math.max(30, Math.floor((screenW - LEFT_W) / 7));
 
@@ -1535,7 +1535,21 @@ export default function FamilyScreen() {
     const maxD = dep.length ? dep.reduce((a, b) => (a > b ? a : b)) : today;
     const spanStart = startOfWeek(minA < today ? minA : today);
     const spanEnd = endOfWeek(maxD > today ? maxD : today);
-    return { byRoom, days: datesBetween(spanStart, spanEnd), today };
+    // Gantt-style ordering: rooms whose occupants arrive earliest come first;
+    // unused rooms sink to the bottom in master-list order.
+    const firstArrival: Record<string, string> = {};
+    Object.entries(byRoom).forEach(([k, ms]) => {
+      firstArrival[k] = ms.map(m => String(m.arriveDate).slice(0, 10)).reduce((a, b) => (a < b ? a : b));
+    });
+    const idx = Object.fromEntries(ROOMS.map((r, i) => [r.key, i]));
+    const orderedRooms = [...ROOMS].sort((a, b) => {
+      const fa = firstArrival[a.key], fb = firstArrival[b.key];
+      if (fa && fb) return fa !== fb ? (fa < fb ? -1 : 1) : idx[a.key] - idx[b.key];
+      if (fa) return -1;
+      if (fb) return 1;
+      return idx[a.key] - idx[b.key];
+    });
+    return { byRoom, days: datesBetween(spanStart, spanEnd), today, orderedRooms };
   }, [members]);
 
   const occCount = (roomKey: string, date: string) =>
@@ -1558,7 +1572,7 @@ export default function FamilyScreen() {
   }, [activeTab, roomTimeline, dayWidth]);
 
   const renderRoomsTab = () => {
-    const { days, today } = roomTimeline;
+    const { days, today, orderedRooms } = roomTimeline;
     const contentW = days.length * dayWidth;
     const dObj = (d: string) => new Date(d + 'T12:00:00');
     const wdInitial = (d: string) => ['S', 'M', 'T', 'W', 'T', 'F', 'S'][dObj(d).getDay()];
@@ -1597,7 +1611,7 @@ export default function FamilyScreen() {
         >
           <View style={{ flexDirection: 'row' }}>
             <View style={{ width: LEFT_W }}>
-              {ROOMS.map(room => {
+              {orderedRooms.map(room => {
                 const who = whoIn(room.key);
                 const owner = 'owner' in room ? room.owner : null;
                 return (
@@ -1634,7 +1648,7 @@ export default function FamilyScreen() {
               style={{ width: screenW - LEFT_W }}
             >
               <View style={{ width: contentW }}>
-                {ROOMS.map(room => (
+                {orderedRooms.map(room => (
                   <View key={room.key} style={[styles.tlBarRow, { height: ROW_H, width: contentW }]}>
                     {days.map(d => {
                       const n = occCount(room.key, d);
@@ -2075,14 +2089,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EDD9A3',
     borderRightWidth: 1, borderRightColor: '#EDD9A3', backgroundColor: '#FFFDF7',
   },
-  tlRoomName: { fontSize: 12, fontWeight: '700', color: '#1A1209',
+  tlRoomName: { fontSize: 11, fontWeight: '700', color: '#1A1209',
     fontFamily: Platform.select({ web: 'Playfair Display, Georgia, serif', default: undefined }) },
   tlRoomOwner: { fontSize: 8, fontWeight: '700', color: '#C8973D',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
   tlWho: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 2, paddingRight: 4 },
-  tlChip: { width: 20, height: 20, borderRadius: 10 },
+  tlChip: { width: 17, height: 17, borderRadius: 8.5 },
   tlChipFallback: { alignItems: 'center', justifyContent: 'center' },
-  tlChipText: { fontSize: 8, fontWeight: '700', color: '#fff' },
+  tlChipText: { fontSize: 7, fontWeight: '700', color: '#fff' },
   tlWhoMore: { fontSize: 9, fontWeight: '700', color: '#8B6245', marginLeft: 1 },
   tlBarRow: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#EDD9A3' },
   tlCell: {
