@@ -1,5 +1,9 @@
 # LesJoyeuxLive — Claude Code Instructions
 
+## 📖 Start here (read first, every new session)
+
+**Read [`PROJECT_STATUS.md`](./PROJECT_STATUS.md) before doing anything.** It is the source of truth for what's built, what's on the backlog, and — in its **"Conventions & Handoff"** section — the working agreements, architecture decisions, and gotchas that don't live in the code (auth model, single-master-list pattern, git/PR workflow, migrations, etc.). This file (CLAUDE.md) covers deployment/testing rules; PROJECT_STATUS.md covers everything else.
+
 ## Deployment verification before any web testing
 
 Before testing any feature against the live site, always:

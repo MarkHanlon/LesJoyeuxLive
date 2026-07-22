@@ -1,6 +1,35 @@
 # Project Status: Les Joyeux Live
 
-**Last Updated**: 2026-07-13 (Auto-refresh across screens; Android Events scroll-jump fix)
+**Last Updated**: 2026-07-19 (Rooms occupancy timeline; site-owner concept; Conventions & Handoff added)
+
+## 🧭 Conventions & Handoff (read this first)
+
+Working agreements and decisions that aren't obvious from the code. A new session should read this before making changes.
+
+### Git / PR workflow
+- Develop on branch **`claude/pwa-ios-push-notifications-9fouZ`**; keep it in sync with `main`.
+- Ship each change as: commit → push feature branch → open PR → **squash-merge to `main`** (Vercel deploys from `main`).
+- After a squash-merge, **re-sync local** to the merged state: `git fetch origin main && git reset --hard origin/main`.
+- Pushing the feature branch after a squash often needs a merge of the remote tip first; if `admin.tsx` conflicts, the remote holds pre-squash history whose content is already in `main` — **resolve with `git checkout --ours`** (keep local), then continue.
+- **Expected & ignored:** the Stop-hook "commit … Unverified (committer email noreply@github.com)" warning fires on GitHub's squash-merge commit. Per the owner, **leave as is** — do not rewrite merged history.
+
+### Deploy / DB
+- Single catch-all API: **`api/[...path].ts`** (Neon Postgres). All schema changes are additive `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` inside `POST /api/migrate`.
+- **After any schema change, run migrations** via the Family tab → **Run Migrations** button (owner-only). Server code degrades gracefully (try/catch) so the app doesn't hard-fail pre-migration.
+- Verify deploys via the build stamp (see deployment section in CLAUDE.md) + the Version Testing Log.
+
+### Auth & roles (accepted-risk model)
+- Auth is **UUID-in-header** (`x-user-id` / `x-admin-id`) — an accepted risk for a family app. All member UUIDs are returned by `/api/family/members`, so it's spoofable by a determined user; a real fix needs per-request auth (PIN re-entry / signed tokens) — tracked as a follow-up.
+- Roles: `guest` / `staff` / `admin`, plus a separate **site-owner** flag (`is_owner`). Owner = a level above admin (migrations, test users, granting/removing admin). Default owner = earliest-created user (Mark), resolved resiliently by `callerIsOwner()` and self-bootstrapping.
+
+### Patterns to follow
+- **Single master list** for enumerable domain data, imported by both app and API (relative import, not the `@/` alias, so the Vercel function resolves it): `constants/drinks.ts`, `constants/rooms.ts`. Adding an item = one edit; icons/labels/valid-sets/types are derived. Do this instead of duplicating lists across `visit.tsx` + `api` + display maps.
+- **Auto-refresh** is centralised in `hooks/useAutoRefresh.ts` (focus + interval-while-visible + foreground/reconnect + service-worker push nudge). Callers must pass a **memoized** `refresh` (`useCallback(..., [user])`).
+- **Gotcha — background polls must be visually silent:** never toggle a loading spinner / unmount / collapse list content on a background refresh. On Android a content-height collapse resets `ScrollView` scroll to the top (iOS tolerates it). See the Auto-Refresh Gotcha note further down.
+- Visit data (`visits` row, one per user) carries dates + `status` (coming/not_coming/undecided) + `room`. Consumers treat **missing dates as "not visiting"**, so not-coming/undecided members are auto-excluded everywhere.
+
+### Deferred follow-ups (see backlog + notes below)
+- Per-request auth hardening (above). Print schedule by room/date. Location tracker, cork count, badges vote, tidy messages (backlog). Consolidate the three drink definitions into the single `constants/drinks.ts` master list.
 
 ## Version Testing Log
 
