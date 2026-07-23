@@ -345,10 +345,12 @@ footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:
   if (w) { w.document.write(html); w.document.close(); }
 }
 
-// Landscape, fit-to-page Gantt of who is in which room over a date range.
-// One row per occupant (grouped under the room); a coloured bar spans each stay.
-// `hideEmpty` drops rooms with no one staying in the range. All rooms are shown
-// otherwise, in master-list order. Web-only (uses window.open + print).
+// Printable room-occupancy grid — mirrors the on-screen Rooms timeline.
+// One row per room; each day cell is shaded by how many people are in that room
+// (1 / 2 / 3+), with the count shown when ≥2. Rooms are ordered exactly as the
+// timeline orders them (earliest-occupied first; unoccupied rooms last in
+// master-list order). `hideEmpty` drops rooms with no one staying in the range.
+// Scales to fit a single A4 landscape page. Web-only (window.open + print).
 function printRoomAllocation(
   members: FamilyMember[],
   fromDate: string,
@@ -362,15 +364,34 @@ function printRoomAllocation(
   const today = todayStr();
   const dObj = (d: string) => new Date(d + 'T12:00:00');
   const isWeekend = (d: string) => { const g = dObj(d).getDay(); return g === 0 || g === 6; };
-  const shortDate = (d: string) => dObj(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const firstName = (n: string) => n.trim().split(/\s+/)[0];
 
-  // Occupants of a room whose stay overlaps the range, earliest arrival first.
+  // Occupants of a room whose stay overlaps the range.
   const occupantsOf = (roomKey: string) =>
     members
       .filter(m => m.arriveDate && m.departDate && effectiveRoom(m.room, m.name) === roomKey)
       .map(m => ({ name: m.name, a: String(m.arriveDate).slice(0, 10), d: String(m.departDate).slice(0, 10) }))
       .filter(o => o.a <= toDate && o.d >= fromDate)
       .sort((x, y) => (x.a !== y.a ? (x.a < y.a ? -1 : 1) : (x.name < y.name ? -1 : 1)));
+
+  // Same ordering as the on-screen timeline: earliest first-arrival wins; rooms
+  // with occupants sink above empty ones; ties fall back to master-list order.
+  const occByRoom: Record<string, { name: string; a: string; d: string }[]> = {};
+  ROOMS.forEach(r => { occByRoom[r.key] = occupantsOf(r.key); });
+  const firstArrival: Record<string, string> = {};
+  Object.entries(occByRoom).forEach(([k, occ]) => {
+    if (occ.length) firstArrival[k] = occ.reduce((a, b) => (a.a < b.a ? a : b)).a;
+  });
+  const idx = Object.fromEntries(ROOMS.map((r, i) => [r.key, i]));
+  const ordered = [...ROOMS].sort((a, b) => {
+    const fa = firstArrival[a.key], fb = firstArrival[b.key];
+    if (fa && fb) return fa !== fb ? (fa < fb ? -1 : 1) : idx[a.key] - idx[b.key];
+    if (fa) return -1;
+    if (fb) return 1;
+    return idx[a.key] - idx[b.key];
+  });
+
+  const shadeClass = (n: number) => (n >= 3 ? 'b3' : n === 2 ? 'b2' : 'b1');
 
   // Month bands across the day columns (colspan per contiguous month).
   const bands: { label: string; span: number }[] = [];
@@ -386,42 +407,23 @@ function printRoomAllocation(
     return `<th class="${cls}">${dObj(d).getDate()}</th>`;
   }).join('');
 
-  const emptyDayCells = () =>
-    days.map(d => {
-      const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : ''].filter(Boolean).join(' ');
-      return `<td class="${cls}"></td>`;
-    }).join('');
-
   let shownRooms = 0;
-  const bodyRows = ROOMS.map(room => {
-    const occ = occupantsOf(room.key);
+  const bodyRows = ordered.map(room => {
+    const occ = occByRoom[room.key];
     if (hideEmpty && occ.length === 0) return '';
     shownRooms++;
     const owner = 'owner' in room ? room.owner : null;
-    const roomCell = `<td class="room" rowspan="${Math.max(1, occ.length)}">`
-      + `<span class="rn">${escapeHtml(room.label)}</span>`
-      + (owner ? `<span class="ro">${escapeHtml(owner)}'s</span>` : '')
-      + `</td>`;
-
-    if (occ.length === 0) {
-      return `<tr>${roomCell}<td class="guest empty">— free —</td>${emptyDayCells()}</tr>`;
-    }
-
-    return occ.map((o, i) => {
-      const color = avatarColor(o.name);
-      const cells = days.map(d => {
-        const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : ''].filter(Boolean).join(' ');
-        const inStay = o.a <= d && d <= o.d;
-        return inStay
-          ? `<td class="${cls} bar" style="background:${color}"></td>`
-          : `<td class="${cls}"></td>`;
-      }).join('');
-      const guest = `<td class="guest">`
-        + `<span class="dot" style="background:${color}"></span>`
-        + `${escapeHtml(o.name)} <span class="gd">${shortDate(o.a)} – ${shortDate(o.d)}</span>`
-        + `</td>`;
-      return `<tr>${i === 0 ? roomCell : ''}${guest}${cells}</tr>`;
+    const who = occ.length
+      ? occ.map(o => escapeHtml(firstName(o.name))).join(', ')
+      : '<span class="empty">— free —</span>';
+    const cells = days.map(d => {
+      const n = occ.filter(o => o.a <= d && d <= o.d).length;
+      const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : '', n > 0 ? shadeClass(n) : ''].filter(Boolean).join(' ');
+      return `<td class="${cls}">${n >= 2 ? n : ''}</td>`;
     }).join('');
+    const roomCell = `<td class="room"><span class="rn">${escapeHtml(room.label)}</span>`
+      + (owner ? `<span class="ro">${escapeHtml(owner)}'s</span>` : '') + `</td>`;
+    return `<tr>${roomCell}<td class="who">${who}</td>${cells}</tr>`;
   }).join('');
 
   const rangeLabel = `${dObj(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – `
@@ -430,52 +432,72 @@ function printRoomAllocation(
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <title>Room Allocation — Les Joyeux</title><style>
-@page{size:A4 landscape;margin:1cm}
+@page{size:A4 landscape;margin:8mm}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;color:#1A1209;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{background:#fff}
+body{font-family:Arial,sans-serif;color:#1A1209;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* #page is exactly the landscape print area; #sheet is scaled to fit inside it,
+   so the table can never spill onto a second page. */
+#page{width:281mm;height:194mm;overflow:hidden}
+#sheet{width:281mm;transform-origin:top left}
 header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:8px;margin-bottom:10px}
 .fleur{font-size:18px;color:#C8973D;display:block;margin-bottom:2px}
 h1{font-size:18px;font-style:italic;font-family:Georgia,serif;margin-bottom:2px}
-.subtitle{font-size:10px;color:#8B6245}
+.subtitle{font-size:11px;color:#8B6245}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
-col.room{width:2.6cm}col.guest{width:4cm}
-th,td{border:1px solid #E7D6A8;font-size:8px;overflow:hidden;text-align:center}
+col.room{width:26mm}col.who{width:40mm}
+th,td{border:1px solid #E7D6A8;font-size:9px;overflow:hidden;text-align:center}
 thead th{background:#FAF6EC;color:#8B6245;font-weight:700}
-.month{font-size:9px;padding:3px 2px;border-bottom:1px solid #C8973D}
-.dc{padding:2px 0;height:16px}
-.we{background:#F3EEE0}
-.td{box-shadow:inset 0 0 0 2px #C85A2E}
-.room{text-align:left;padding:4px 6px;vertical-align:middle;background:#fff}
-.rn{display:block;font-size:10px;font-weight:700;color:#1A1209}
-.ro{display:block;font-size:8px;color:#8B6245}
-.guest{text-align:left;padding:3px 6px;font-size:9px;white-space:nowrap;vertical-align:middle}
-.guest.empty{color:#B8A98A;font-style:italic}
-.gd{color:#8B6245;font-size:8px}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
-.bar{border-left-color:rgba(255,255,255,.35);border-right-color:rgba(255,255,255,.35)}
-tbody tr{page-break-inside:avoid}
+.month{font-size:10px;padding:3px 2px;border-bottom:1px solid #C8973D}
+.dc{padding:3px 0;height:18px;font-weight:700;color:#4A2E12}
+.we{background:#EFE4C4}
+.td{box-shadow:inset 2px 0 0 #C85A2E}
+.b1{background:#EAD3A7}.b2{background:#D99C5B}.b3{background:#C97C3D}
+.room{text-align:left;padding:5px 6px;vertical-align:middle;background:#fff}
+.rn{display:block;font-size:11px;font-weight:700;color:#1A1209}
+.ro{display:block;font-size:9px;color:#8B6245}
+.who{text-align:left;padding:4px 6px;font-size:9px;color:#5C3D2E;background:#FFFDF5;line-height:1.3}
+.who .empty{color:#B8A98A;font-style:italic}
 footer{margin-top:10px;text-align:center;font-size:9px;color:#B8956A}
+.legend{margin-top:8px;display:flex;gap:14px;justify-content:center;align-items:center;font-size:10px;color:#8B6245}
+.sw{display:inline-block;width:14px;height:11px;border-radius:2px;border:1px solid #ddd;vertical-align:middle;margin-right:4px}
 .hint{margin-top:6px;text-align:center;font-size:9px;color:#8B6245}
 .close-btn{display:block;margin:14px auto 0;padding:8px 22px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer}
 @media print{.close-btn,.hint{display:none}}
 </style></head><body>
+<div id="page"><div id="sheet">
 <header>
   <span class="fleur">✸</span>
   <h1>Room Allocation</h1>
   <p class="subtitle">${rangeLabel}  ·  ${roomsNote}</p>
 </header>
 <table>
-  <colgroup><col class="room"><col class="guest">${days.map(() => '<col>').join('')}</colgroup>
+  <colgroup><col class="room"><col class="who">${days.map(() => '<col>').join('')}</colgroup>
   <thead>
-    <tr><th rowspan="2" class="room">Room</th><th rowspan="2" class="guest">Guest</th>${monthHeader}</tr>
+    <tr><th rowspan="2" class="room">Room</th><th rowspan="2" class="who">Who</th>${monthHeader}</tr>
     <tr>${dayHeader}</tr>
   </thead>
   <tbody>${bodyRows}</tbody>
 </table>
-<p class="hint">Best printed in landscape · each bar shows a guest's stay · today marked in orange</p>
+<div class="legend">
+  <span><span class="sw" style="background:#EAD3A7"></span>1 person</span>
+  <span><span class="sw" style="background:#D99C5B"></span>2 people</span>
+  <span><span class="sw" style="background:#C97C3D"></span>3+ people</span>
+  <span>· number = people sharing · today marked in orange</span>
+</div>
 <footer>Les Joyeux</footer>
+</div></div>
+<p class="hint">Prints on one landscape page — if the dialog opens in portrait, choose Landscape.</p>
 <button class="close-btn" onclick="window.close()">Close</button>
-<script>window.focus();window.print();<\/script>
+<script>
+window.onload=function(){
+  var sheet=document.getElementById('sheet');
+  var h_mm=sheet.getBoundingClientRect().height*25.4/96; // CSS px -> mm
+  var s=Math.min(1, 194/h_mm);                            // fit the 194mm page height
+  if(s<1){ sheet.style.transform='scale('+s+')'; }
+  window.focus(); window.print();
+};
+<\/script>
 </body></html>`;
 
   const w = window.open('', '_blank', 'width=1100,height=760');
