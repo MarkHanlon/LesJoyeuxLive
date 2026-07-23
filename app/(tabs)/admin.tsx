@@ -156,18 +156,6 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function currentWeekDates(): string[] {
-  const today = new Date();
-  const day = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
-}
-
 const BEFORE_DINNER_SLOTS = new Set(['morning', 'lunchtime', 'afternoon']);
 
 function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
@@ -201,147 +189,189 @@ const escapeHtml = (s: string) =>
   String(s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
-function printDinnerGrid(members: FamilyMember[]) {
+// Lunch & dinner grids over a selectable date range (guests × days). Wide ranges
+// fit the page width via table-layout:fixed and flow onto extra pages vertically.
+// Web-only (window.open + print).
+function printDinnerGrid(members: FamilyMember[], fromDate: string, toDate: string) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-  const weekDates = currentWeekDates();
-  const guests = members.filter(m => m.role !== 'staff');
-  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (fromDate > toDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+  const days = datesBetween(fromDate, toDate);
+  const today = todayStr();
+  const dObj = (d: string) => new Date(d + 'T12:00:00');
+  const isWeekend = (d: string) => { const g = dObj(d).getDay(); return g === 0 || g === 6; };
+  const wd = (d: string) => ['S', 'M', 'T', 'W', 'T', 'F', 'S'][dObj(d).getDay()];
 
-  function buildHeaderCells() {
-    return weekDates.map((date, i) => {
-      const d = new Date(date + 'T12:00:00');
-      return `<th class="day-header">${dayNames[i]}<br><span class="day-num">${d.getDate()}</span></th>`;
-    }).join('');
-  }
+  // Only guests present for at least one day in the range (skip staff + no-shows).
+  const guests = members.filter(m =>
+    m.role !== 'staff' && m.arriveDate && m.departDate
+    && String(m.arriveDate).slice(0, 10) <= toDate && String(m.departDate).slice(0, 10) >= fromDate);
 
-  function buildBodyRows(statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') {
-    return guests.map(member => {
-      const cells = weekDates.map(date => {
-        const status = statusFn(member, date);
-        if (status === 'yes') return `<td class="cell-yes"></td>`;
-        if (status === 'keep') return `<td class="cell-keep"><span class="keep-label">K</span></td>`;
-        return `<td class="cell-no"></td>`;
+  const bands: { label: string; span: number }[] = [];
+  days.forEach(d => {
+    const label = dObj(d).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const last = bands[bands.length - 1];
+    if (last && last.label === label) last.span++;
+    else bands.push({ label, span: 1 });
+  });
+  const monthHeader = bands.map(b => `<th colspan="${b.span}" class="month">${escapeHtml(b.label)}</th>`).join('');
+  const dayHeader = days.map(d => {
+    const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : ''].filter(Boolean).join(' ');
+    return `<th class="${cls}"><span class="wd">${wd(d)}</span><span class="dn">${dObj(d).getDate()}</span></th>`;
+  }).join('');
+
+  const bodyRows = (statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') =>
+    guests.map(m => {
+      const cells = days.map(d => {
+        const s = statusFn(m, d);
+        const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : '',
+          s === 'yes' ? 'yes' : s === 'keep' ? 'keep' : ''].filter(Boolean).join(' ');
+        return `<td class="${cls}">${s === 'keep' ? 'K' : ''}</td>`;
       }).join('');
-      return `<tr><td class="name-cell">${escapeHtml(member.name)}</td>${cells}</tr>`;
+      return `<tr><td class="name">${escapeHtml(m.name)}</td>${cells}</tr>`;
     }).join('');
-  }
 
-  function buildTotalCells(statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') {
-    return weekDates.map(date => {
-      const count = guests.filter(m => statusFn(m, date) !== 'no').length;
-      return `<td class="total-cell">${count > 0 ? count : ''}</td>`;
+  const totalsRow = (statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') => {
+    const cells = days.map(d => {
+      const n = guests.filter(m => statusFn(m, d) !== 'no').length;
+      const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : '', 'total'].filter(Boolean).join(' ');
+      return `<td class="${cls}">${n || ''}</td>`;
     }).join('');
-  }
+    return `<tr><td class="name total">Total</td>${cells}</tr>`;
+  };
 
-  const headerCells = buildHeaderCells();
-  const dinnerRows  = buildBodyRows(getDinnerStatus);
-  const dinnerTotals = buildTotalCells(getDinnerStatus);
-  const lunchRows   = buildBodyRows(getLunchStatus);
-  const lunchTotals  = buildTotalCells(getLunchStatus);
+  const table = (title: string, statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') => `
+    <p class="section-title">${title}</p>
+    <table>
+      <colgroup><col class="name">${days.map(() => '<col>').join('')}</colgroup>
+      <thead>
+        <tr><th rowspan="2" class="name"></th>${monthHeader}</tr>
+        <tr>${dayHeader}</tr>
+      </thead>
+      <tbody>${bodyRows(statusFn)}${totalsRow(statusFn)}</tbody>
+    </table>`;
 
-  const first = new Date(weekDates[0] + 'T12:00:00');
-  const last  = new Date(weekDates[6] + 'T12:00:00');
-  const weekLabel = `${first.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – ${last.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+  const rangeLabel = `${dObj(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – `
+    + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<title>Meals This Week — Les Joyeux</title><style>
-@page{size:A4 landscape;margin:1.5cm}
+<title>Meals — Les Joyeux</title><style>
+@page{size:A4 landscape;margin:8mm}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;color:#1A1209;background:#fff}
-header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:10px;margin-bottom:14px}
-.fleur{font-size:22px;color:#C8973D;display:block;margin-bottom:4px}
-h1{font-size:20px;font-style:italic;font-family:Georgia,serif;color:#1A1209;margin-bottom:3px}
+body{font-family:Arial,sans-serif;color:#1A1209;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:8px;margin-bottom:8px}
+.fleur{font-size:18px;color:#C8973D;display:block;margin-bottom:2px}
+h1{font-size:18px;font-style:italic;font-family:Georgia,serif;margin-bottom:2px}
 .subtitle{font-size:11px;color:#8B6245}
-.section-title{font-size:13px;font-weight:700;color:#8B6245;margin:12px 0 6px;padding-left:2px}
-table{width:100%;border-collapse:collapse;margin-bottom:4px}
-th,td{border:1px solid #EDD9A3;vertical-align:middle;text-align:center}
-.name-cell{text-align:left;padding:5px 8px;font-size:12px;font-weight:600;white-space:nowrap;min-width:90px;max-width:140px}
-.day-header{padding:6px 4px;font-size:11px;font-weight:700;color:#8B6245;background:#FAF6EC;min-width:55px}
-.day-num{font-size:13px;font-weight:700;color:#1A1209;display:block}
-.cell-yes{background:#2D5A3D;height:28px}
-.cell-keep{background:#C8973D;height:28px}
-.cell-no{background:#FAF4E6;height:28px}
-.keep-label{font-weight:700;color:#fff;font-size:13px}
-.total-row td{background:#F0EBE0;font-weight:700;font-size:12px;padding:4px}
-.total-cell{color:#2D5A3D}
-.legend{margin-top:10px;display:flex;gap:16px;justify-content:center;font-size:11px;color:#8B6245}
+.section-title{font-size:12px;font-weight:700;color:#8B6245;margin:10px 0 4px}
+table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:6px}
+col.name{width:32mm}
+th,td{border:1px solid #E7D6A8;font-size:8px;text-align:center;overflow:hidden}
+thead th{background:#FAF6EC;color:#8B6245;font-weight:700}
+.month{font-size:9px;border-bottom:1px solid #C8973D;padding:2px}
+.dc{height:15px;padding:1px 0}
+.wd{display:block;font-size:7px;color:#8B6245}
+.dn{display:block;font-size:9px;font-weight:700;color:#1A1209}
+.name{text-align:left;padding:3px 6px;font-size:9px;font-weight:600;white-space:nowrap;background:#fff}
+.we{background:#E7E8EC}
+.td{box-shadow:inset 2px 0 0 #C85A2E}
+.yes{background:#2D5A3D}
+.keep{background:#C8973D;color:#fff;font-weight:700}
+.total{font-weight:700;background:#F0EBE0;color:#2D5A3D}
+tbody tr{page-break-inside:avoid}
+.legend{margin-top:8px;display:flex;gap:16px;justify-content:center;font-size:10px;color:#8B6245}
 .legend-item{display:flex;align-items:center;gap:5px}
-.legend-swatch{width:12px;height:12px;border-radius:2px;display:inline-block;border:1px solid #ddd}
-footer{margin-top:10px;text-align:center;font-size:10px;color:#B8956A}
-.close-btn{display:block;margin:16px auto 0;padding:8px 22px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer}
+.sw{width:12px;height:11px;border-radius:2px;display:inline-block;border:1px solid #ddd}
+footer{margin-top:8px;text-align:center;font-size:9px;color:#B8956A}
+.close-btn{display:block;margin:14px auto 0;padding:8px 22px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer}
 @media print{.close-btn{display:none}}
 </style></head><body>
 <header>
   <span class="fleur">✸</span>
-  <h1>Meals This Week</h1>
-  <p class="subtitle">${weekLabel}</p>
+  <h1>Meals</h1>
+  <p class="subtitle">${rangeLabel}</p>
 </header>
-<p class="section-title">🍽 Lunch</p>
-<table>
-  <thead><tr><th class="name-cell"></th>${headerCells}</tr></thead>
-  <tbody>${lunchRows}</tbody>
-  <tfoot><tr><td class="name-cell total-row" style="color:#8B6245">Total</td>${lunchTotals}</tr></tfoot>
-</table>
-<p class="section-title">🍷 Dinner</p>
-<table>
-  <thead><tr><th class="name-cell"></th>${headerCells}</tr></thead>
-  <tbody>${dinnerRows}</tbody>
-  <tfoot><tr><td class="name-cell total-row" style="color:#8B6245">Total</td>${dinnerTotals}</tr></tfoot>
-</table>
+${table('🥗 Lunch', getLunchStatus)}
+${table('🍷 Dinner', getDinnerStatus)}
 <div class="legend">
-  <div class="legend-item"><span class="legend-swatch" style="background:#2D5A3D"></span> Present</div>
-  <div class="legend-item"><span class="legend-swatch" style="background:#C8973D"></span> Keep plate (K)</div>
-  <div class="legend-item"><span class="legend-swatch" style="background:#FAF4E6"></span> Not present</div>
+  <div class="legend-item"><span class="sw" style="background:#2D5A3D"></span> Present</div>
+  <div class="legend-item"><span class="sw" style="background:#C8973D"></span> Keep plate (K)</div>
+  <div class="legend-item"><span class="sw" style="background:#E7E8EC"></span> Weekend</div>
 </div>
 <footer>Les Joyeux</footer>
 <button class="close-btn" onclick="window.close()">Close</button>
 <script>window.focus();window.print();<\/script>
 </body></html>`;
 
-  const w = window.open('', '_blank', 'width=960,height=700');
+  const w = window.open('', '_blank', 'width=1100,height=760');
   if (w) { w.document.write(html); w.document.close(); }
 }
 
-function printAperitifs(rows: [string, number][], hereCount: number) {
+// Per-evening apéritif tally across a date range — one compact card per evening
+// (drink + count for whoever's there that night), flowed into columns. Web-only.
+function printAperitifs(members: FamilyMember[], fromDate: string, toDate: string) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-  const today = new Date().toLocaleDateString('en-GB', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  if (fromDate > toDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+  const days = datesBetween(fromDate, toDate);
+  const dObj = (d: string) => new Date(d + 'T12:00:00');
+
+  // Who is here for the apéritif on a given evening (mirrors the Tonight card).
+  const presentOn = (d: string) => members.filter(m => {
+    if (!m.arriveDate || !m.departDate) return false;
+    const a = String(m.arriveDate).slice(0, 10), dep = String(m.departDate).slice(0, 10);
+    if (d < a || d > dep) return false;
+    if (d === dep && BEFORE_DINNER_SLOTS.has(m.departSlot ?? '')) return false; // gone before the evening
+    return true;
   });
-  const rowsHtml = rows.map(([key, count]) => {
-    const isUndecided = key === '__undecided__';
-    const icon  = isUndecided ? '🎲' : (DRINK_ICONS[key] ?? '🍷');
-    const label = isUndecided ? 'Undecided' : (DRINK_LABELS[key] ?? key);
-    return `<tr><td class="icon">${icon}</td><td class="drink">${escapeHtml(label)}</td><td class="count">\xd7${count}</td></tr>`;
+
+  const cards = days.map(d => {
+    const present = presentOn(d);
+    if (present.length === 0) return '';
+    const counts: Record<string, number> = {};
+    present.forEach(m => { const k = m.aperitif ?? '__undecided__'; counts[k] = (counts[k] ?? 0) + 1; });
+    const rows = Object.entries(counts).sort(([, a], [, b]) => b - a).map(([k, c]) => {
+      const isU = k === '__undecided__';
+      const icon = isU ? '🎲' : (DRINK_ICONS[k] ?? '🍷');
+      const label = isU ? 'Undecided' : (DRINK_LABELS[k] ?? k);
+      return `<div class="drow"><span class="di">${icon}</span><span class="dl">${escapeHtml(label)}</span><span class="dn">\xd7${c}</span></div>`;
+    }).join('');
+    const dateLbl = dObj(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return `<div class="card"><div class="ch">${dateLbl}<span class="chc">${present.length}</span></div>${rows}</div>`;
   }).join('');
+
+  const rangeLabel = `${dObj(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – `
+    + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+  const body = cards || `<p class="none">No one is here for an apéritif in this range.</p>`;
+
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<title>Tonight's Aperitifs — Les Joyeux</title><style>
-@page{size:A4 portrait;margin:3cm}
+<title>Apéritifs — Les Joyeux</title><style>
+@page{size:A4 portrait;margin:14mm}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Georgia,'Times New Roman',serif;color:#1A1209;background:#fff}
-header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:18px;margin-bottom:24px}
-.fleur{font-size:28px;color:#C8973D;display:block;margin-bottom:8px}
-h1{font-size:28px;font-style:italic;color:#1A1209;margin-bottom:6px}
-.subtitle{font-family:Arial,sans-serif;font-size:13px;color:#8B6245}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-tr{border-bottom:1px solid #EDD9A3}
-tr:last-child{border-bottom:none}
-td{padding:14px 8px;vertical-align:middle}
-.icon{font-size:28px;width:48px;text-align:center}
-.drink{font-size:20px;font-style:italic}
-.count{font-family:Arial,sans-serif;font-size:20px;font-weight:700;color:#2D5A3D;text-align:right;width:60px}
-footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:center;font-family:Arial,sans-serif;font-size:11px;color:#B8956A}
-.close-btn{display:block;margin:24px auto 0;padding:10px 28px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.3px}
-.close-btn:hover{background:#3d7a54}
+body{font-family:Georgia,'Times New Roman',serif;color:#1A1209;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:14px;margin-bottom:16px}
+.fleur{font-size:24px;color:#C8973D;display:block;margin-bottom:6px}
+h1{font-size:26px;font-style:italic;margin-bottom:4px}
+.subtitle{font-family:Arial,sans-serif;font-size:12px;color:#8B6245}
+.cards{column-width:58mm;column-gap:8mm}
+.card{break-inside:avoid;border:1px solid #EDD9A3;border-radius:8px;padding:8px 10px;margin-bottom:8px;display:inline-block;width:100%}
+.ch{display:flex;justify-content:space-between;align-items:center;font-family:Arial,sans-serif;font-weight:700;font-size:12px;color:#8B6245;border-bottom:1px solid #EDD9A3;padding-bottom:4px;margin-bottom:6px}
+.chc{background:#2D5A3D;color:#F5EDD6;border-radius:10px;padding:0 7px;font-size:10px}
+.drow{display:flex;align-items:center;gap:6px;padding:2px 0}
+.di{font-size:16px;width:22px;text-align:center}
+.dl{flex:1;font-style:italic;font-size:13px}
+.dn{font-family:Arial,sans-serif;font-weight:700;color:#2D5A3D;font-size:13px}
+.none{text-align:center;color:#8B6245;font-style:italic;margin-top:20px}
+footer{margin-top:16px;border-top:1px solid #EDD9A3;padding-top:10px;text-align:center;font-family:Arial,sans-serif;font-size:10px;color:#B8956A}
+.close-btn{display:block;margin:18px auto 0;padding:9px 26px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer}
 @media print{.close-btn{display:none}}
 </style></head><body>
-<header><span class="fleur">✸</span><h1>Tonight's Aperitifs</h1>
-<p class="subtitle">${hereCount} ${hereCount === 1 ? 'person' : 'people'} here tonight  ·  ${today}</p>
-</header><table>${rowsHtml}</table>
+<header><span class="fleur">✸</span><h1>Apéritifs</h1>
+<p class="subtitle">${rangeLabel}</p></header>
+<div class="cards">${body}</div>
 <footer>Les Joyeux</footer>
 <button class="close-btn" onclick="window.close()">Close</button>
 <script>window.focus();window.print();<\/script>
 </body></html>`;
-  const w = window.open('', '_blank', 'width=800,height=600');
+  const w = window.open('', '_blank', 'width=900,height=720');
   if (w) { w.document.write(html); w.document.close(); }
 }
 
@@ -633,6 +663,19 @@ function BellCard({ userId }: { userId: string }) {
 }
 
 function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
+  // Print dialog (meals + apéritifs share one date-range modal).
+  const [printMode, setPrintMode] = useState<null | 'meals' | 'aperitifs'>(null);
+  const [pFrom, setPFrom] = useState('');
+  const [pTo, setPTo] = useState('');
+  const mealSpan = useMemo(() => {
+    const withDates = members.filter(m => m.arriveDate && m.departDate);
+    if (!withDates.length) { const t = todayStr(); return { from: t, to: t }; }
+    const arrs = withDates.map(m => String(m.arriveDate).slice(0, 10));
+    const deps = withDates.map(m => String(m.departDate).slice(0, 10));
+    return { from: arrs.reduce((a, b) => (a < b ? a : b)), to: deps.reduce((a, b) => (a > b ? a : b)) };
+  }, [members]);
+  const openPrint = (mode: 'meals' | 'aperitifs') => { setPFrom(mealSpan.from); setPTo(mealSpan.to); setPrintMode(mode); };
+
   const today = todayStr();
   const hereTonight = members.filter(m => {
     if (!m.arriveDate || !m.departDate) return false;
@@ -664,21 +707,20 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
           </Text>
         </View>
         {Platform.OS === 'web' && (
-          <TouchableOpacity onPress={() => printDinnerGrid(members)} activeOpacity={0.7} style={styles.dinnerPrintBtn}>
+          <TouchableOpacity onPress={() => openPrint('meals')} activeOpacity={0.7} style={styles.dinnerPrintBtn}>
             <Text style={styles.dinnerPrintBtnText}>🖨</Text>
           </TouchableOpacity>
         )}
       </View>
       <View style={[styles.summaryCard, { marginTop: 4 }]}>
-        {Platform.OS === 'web' ? (
-          <TouchableOpacity onPress={() => printAperitifs(rows, hereTonight.length)} activeOpacity={0.7}>
-            <Text style={[styles.summaryCardTitle, styles.summaryCardTitlePrintable]}>
-              {'🍹 Tonight\'s aperitifs  '}<Text style={styles.summaryCardPrintHint}>🖨</Text>
-            </Text>
-          </TouchableOpacity>
-        ) : (
+        <View style={styles.summaryCardTitleRow}>
           <Text style={styles.summaryCardTitle}>🍹 Tonight's aperitifs</Text>
-        )}
+          {Platform.OS === 'web' && (
+            <TouchableOpacity onPress={() => openPrint('aperitifs')} activeOpacity={0.7} style={styles.dinnerPrintBtn}>
+              <Text style={styles.dinnerPrintBtnText}>🖨</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <Text style={styles.summaryCardSub}>
           {hereTonight.length === 0 ? 'Nobody here tonight' : `${hereTonight.length} ${hereTonight.length === 1 ? 'person' : 'people'} here tonight`}
         </Text>
@@ -701,6 +743,24 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
           </View>
         )}
       </View>
+
+      <DateRangePrintModal
+        visible={printMode !== null}
+        title={printMode === 'meals' ? 'Print meals' : 'Print apéritifs'}
+        intro={printMode === 'meals'
+          ? 'Lunch & dinner grid for the dates below. Defaults to the whole summer.'
+          : 'Apéritif choices per evening for the dates below. Defaults to the whole summer.'}
+        from={pFrom}
+        to={pTo}
+        onChangeFrom={setPFrom}
+        onChangeTo={setPTo}
+        onPrint={() => {
+          if (printMode === 'meals') printDinnerGrid(members, pFrom, pTo);
+          else if (printMode === 'aperitifs') printAperitifs(members, pFrom, pTo);
+          setPrintMode(null);
+        }}
+        onClose={() => setPrintMode(null)}
+      />
     </>
   );
 }
@@ -1075,6 +1135,45 @@ function PrintDateField({ label, value, min, onChange }: {
         )}
       </View>
     </View>
+  );
+}
+
+// Shared date-range print dialog (meals + apéritifs). No room-style toggle.
+function DateRangePrintModal({ visible, title, intro, from, to, onChangeFrom, onChangeTo, onPrint, onClose }: {
+  visible: boolean;
+  title: string;
+  intro: string;
+  from: string;
+  to: string;
+  onChangeFrom: (v: string) => void;
+  onChangeTo: (v: string) => void;
+  onPrint: () => void;
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+  const valid = !!from && !!to;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
+          <Text style={styles.roomSheetTitle}>{title}</Text>
+          <Text style={styles.printIntro}>{intro}</Text>
+          <View style={styles.printRow}>
+            <PrintDateField label="From" value={from} onChange={onChangeFrom} />
+            <PrintDateField label="To" value={to} min={from} onChange={onChangeTo} />
+          </View>
+          <TouchableOpacity
+            style={[styles.printGoBtn, !valid && { opacity: 0.5 }]}
+            onPress={() => valid && onPrint()}
+            disabled={!valid}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.printGoBtnText}>🖨  Print</Text>
+          </TouchableOpacity>
+          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -2270,9 +2369,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#EDD9A3',
     padding: 16, gap: 2,
   },
+  summaryCardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summaryCardTitle: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#1A1209' },
-  summaryCardTitlePrintable: { textDecorationLine: 'underline', textDecorationStyle: 'dotted', textDecorationColor: '#C8973D' },
-  summaryCardPrintHint: { fontSize: 13, color: '#C8973D' },
   summaryCardSub: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', marginBottom: 10 },
   summaryCardRows: { gap: 6 },
   summaryCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
