@@ -717,6 +717,8 @@ function MemberCard({
   changingOwner,
   onRoomPress,
   roomBusy,
+  onDatesPress,
+  datesBusy,
   onPress,
 }: {
   member: FamilyMember;
@@ -730,6 +732,8 @@ function MemberCard({
   changingOwner?: boolean;
   onRoomPress?: () => void;
   roomBusy?: boolean;
+  onDatesPress?: () => void;
+  datesBusy?: boolean;
   onPress?: () => void;
 }) {
   const today = todayStr();
@@ -745,7 +749,7 @@ function MemberCard({
     <TouchableOpacity
       activeOpacity={0.75}
       onPress={onPress}
-      style={[styles.card, (managing && onRoleChange) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}
+      style={[styles.card, (managing && (onRoleChange || onRoomPress || onDatesPress)) && { flexDirection: 'column', alignItems: 'stretch', gap: 12 }]}
     >
       {/* Main row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
@@ -869,6 +873,17 @@ function MemberCard({
             </TouchableOpacity>
           )}
         </View>
+      )}
+
+      {/* Arrival/departure dates — admin manage mode, fixes wrong data */}
+      {managing && onDatesPress && (
+        <TouchableOpacity style={styles.roomAssignRow} onPress={onDatesPress} disabled={datesBusy} activeOpacity={0.7}>
+          <Text style={styles.roomAssignLabel}>📅 Dates</Text>
+          <Text style={styles.roomAssignValue}>
+            {hasVisit ? `${formatDate(member.arriveDate!)} → ${formatDate(member.departDate!)}` : 'Set dates'} ›
+          </Text>
+          {datesBusy && <ActivityIndicator size="small" color="#C85A2E" />}
+        </TouchableOpacity>
       )}
 
       {/* Room allocation — admin manage mode, only for members with a visit */}
@@ -1095,7 +1110,55 @@ function RoomPrintModal({ visible, from, to, hideEmpty, onChangeFrom, onChangeTo
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.printGoBtn} onPress={onPrint} activeOpacity={0.85}>
-            <Text style={styles.printGoBtnText}>🖨  Print (landscape)</Text>
+            <Text style={styles.printGoBtnText}>🖨  Print</Text>
+          </TouchableOpacity>
+          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// Admin editor for a member's arrival / departure dates (manage mode).
+function VisitDatesModal({ member, busy, onSave, onClose }: {
+  member: FamilyMember | null;
+  busy: boolean;
+  onSave: (arriveDate: string, departDate: string) => void;
+  onClose: () => void;
+}) {
+  const [arrive, setArrive] = useState('');
+  const [depart, setDepart] = useState('');
+  useEffect(() => {
+    setArrive(member?.arriveDate ? String(member.arriveDate).slice(0, 10) : '');
+    setDepart(member?.departDate ? String(member.departDate).slice(0, 10) : '');
+  }, [member]);
+  if (!member) return null;
+  const valid = !!arrive && !!depart && depart >= arrive;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
+          <Text style={styles.roomSheetTitle}>Dates for {member.name.split(' ')[0]}</Text>
+          <Text style={styles.printIntro}>Fix a member's arrival and departure dates if they entered them wrong.</Text>
+
+          <View style={styles.printRow}>
+            <PrintDateField label="Arrival" value={arrive} onChange={setArrive} />
+            <PrintDateField label="Departure" value={depart} min={arrive} onChange={setDepart} />
+          </View>
+
+          {arrive && depart && !valid && (
+            <Text style={styles.datesWarn}>Departure must be on or after arrival.</Text>
+          )}
+
+          <TouchableOpacity
+            style={[styles.printGoBtn, (!valid || busy) && { opacity: 0.5 }]}
+            onPress={() => valid && !busy && onSave(arrive, depart)}
+            disabled={!valid || busy}
+            activeOpacity={0.85}
+          >
+            {busy
+              ? <ActivityIndicator color="#F5EDD6" size="small" />
+              : <Text style={styles.printGoBtnText}>Save dates</Text>}
           </TouchableOpacity>
           <Text style={styles.modalDismissHint}>Tap outside to close</Text>
         </TouchableOpacity>
@@ -1132,6 +1195,8 @@ export default function FamilyScreen() {
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target (People tab)
   const [roomBusyId, setRoomBusyId] = useState<string | null>(null);
+  const [datesForMember, setDatesForMember] = useState<FamilyMember | null>(null); // date-edit target (manage mode)
+  const [datesBusyId, setDatesBusyId] = useState<string | null>(null);
   // Rooms print dialog
   const [printOpen, setPrintOpen] = useState(false);
   const [printFrom, setPrintFrom] = useState('');
@@ -1363,6 +1428,36 @@ export default function FamilyScreen() {
     }
   }
 
+  // Admin fix-up of a member's arrival/departure dates (manage mode).
+  async function changeVisitDates(memberId: string, arriveDate: string, departDate: string) {
+    if (!user) return;
+    setDatesBusyId(memberId);
+    try {
+      const res = await fetch(`/api/admin/visit/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-admin-id': user.id },
+        body: JSON.stringify({ arriveDate, departDate }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMembers(prev => prev.map(m => m.id === memberId ? {
+          ...m,
+          arriveDate: body.arriveDate ?? arriveDate,
+          departDate: body.departDate ?? departDate,
+          arriveSlot: body.arriveSlot ?? m.arriveSlot,
+          departSlot: body.departSlot ?? m.departSlot,
+          visitStatus: (body.status ?? 'coming') as FamilyMember['visitStatus'],
+        } : m));
+        setDatesForMember(null);
+      } else {
+        const msg = body.error ?? 'Could not update dates';
+        if (Platform.OS === 'web') window.alert(msg); else Alert.alert('Dates', msg);
+      }
+    } finally {
+      setDatesBusyId(null);
+    }
+  }
+
   async function changeOwner(memberId: string, makeOwner: boolean) {
     if (!user) return;
     setOwnerBusyId(memberId);
@@ -1511,6 +1606,8 @@ export default function FamilyScreen() {
             changingOwner={ownerBusyId === m.id}
             onRoomPress={(managing && user?.isAdmin) ? () => setRoomForMember(m) : undefined}
             roomBusy={roomBusyId === m.id}
+            onDatesPress={(managing && user?.isAdmin) ? () => setDatesForMember(m) : undefined}
+            datesBusy={datesBusyId === m.id}
             onPress={() => setSelectedMember(m)}
           />
         );
@@ -1928,7 +2025,7 @@ export default function FamilyScreen() {
                         <View key={d} style={[styles.tlCell, { width: dayWidth }, isWeekend(d) && styles.tlWeekend, d === today && styles.tlTodayCol]}>
                           {n > 0 && (
                             <View style={[styles.tlBar, shadeForCount(n)]}>
-                              {n >= 2 && <Text style={styles.tlBarCount}>{n}</Text>}
+                              <Text style={styles.tlBarCount}>{n}</Text>
                             </View>
                           )}
                         </View>
@@ -2069,6 +2166,12 @@ export default function FamilyScreen() {
         onToggleHideEmpty={() => setPrintHideEmpty(v => !v)}
         onPrint={() => { printRoomAllocation(members, printFrom, printTo, printHideEmpty); setPrintOpen(false); }}
         onClose={() => setPrintOpen(false)}
+      />
+      <VisitDatesModal
+        member={datesForMember}
+        busy={!!datesForMember && datesBusyId === datesForMember.id}
+        onSave={(a, d) => { if (datesForMember) changeVisitDates(datesForMember.id, a, d); }}
+        onClose={() => setDatesForMember(null)}
       />
     </View>
   );
@@ -2435,6 +2538,8 @@ const styles = StyleSheet.create({
     marginTop: 22, paddingVertical: 14, borderRadius: 50, backgroundColor: '#2D5A3D', alignItems: 'center',
   },
   printGoBtnText: { fontSize: 15, fontWeight: '700', color: '#F5EDD6',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  datesWarn: { marginTop: 14, fontSize: 13, color: '#C85A2E', fontWeight: '600',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
 
   // Room / member picker sheet

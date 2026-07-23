@@ -433,6 +433,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, room: roomVal });
     }
 
+    // PATCH /api/admin/visit/:id — admin fixes a member's arrival/departure dates
+    if (seg0 === 'admin' && seg1 === 'visit' && seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const adminId = req.headers['x-admin-id'] as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+      const { arriveDate, departDate } = req.body ?? {};
+      const isDate = (s: unknown): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+      if (!isDate(arriveDate) || !isDate(departDate)) return res.status(400).json({ error: 'Valid dates required' });
+      if (departDate < arriveDate) return res.status(400).json({ error: 'Departure must be on or after arrival' });
+      const db = getDb();
+      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
+      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      const [target] = await db`SELECT id FROM users WHERE id = ${seg2}`;
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      // Upsert: set the dates and mark the visit "coming". Slots are preserved when
+      // present, otherwise defaulted (arrive afternoon / depart morning) so a
+      // status-only or brand-new row still satisfies the slot columns.
+      const [row] = await db`
+        INSERT INTO visits (user_id, arrive_date, arrive_slot, depart_date, depart_slot, status)
+        VALUES (${seg2}, ${arriveDate}, 'afternoon', ${departDate}, 'morning', 'coming')
+        ON CONFLICT (user_id) DO UPDATE SET
+          arrive_date = EXCLUDED.arrive_date,
+          depart_date = EXCLUDED.depart_date,
+          arrive_slot = COALESCE(visits.arrive_slot, 'afternoon'),
+          depart_slot = COALESCE(visits.depart_slot, 'morning'),
+          status      = 'coming',
+          updated_at  = NOW()
+        RETURNING arrive_date::text AS "arriveDate", depart_date::text AS "departDate",
+                  arrive_slot AS "arriveSlot", depart_slot AS "departSlot", status
+      `;
+      return res.status(200).json({ ok: true, ...row });
+    }
+
     // POST /api/push/subscribe
     if (seg0 === 'push' && seg1 === 'subscribe' && !seg2) {
       if (method !== 'POST') return res.status(405).end();
