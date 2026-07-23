@@ -345,6 +345,143 @@ footer{margin-top:32px;border-top:1px solid #EDD9A3;padding-top:12px;text-align:
   if (w) { w.document.write(html); w.document.close(); }
 }
 
+// Landscape, fit-to-page Gantt of who is in which room over a date range.
+// One row per occupant (grouped under the room); a coloured bar spans each stay.
+// `hideEmpty` drops rooms with no one staying in the range. All rooms are shown
+// otherwise, in master-list order. Web-only (uses window.open + print).
+function printRoomAllocation(
+  members: FamilyMember[],
+  fromDate: string,
+  toDate: string,
+  hideEmpty: boolean,
+) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  if (fromDate > toDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+
+  const days = datesBetween(fromDate, toDate);
+  const today = todayStr();
+  const dObj = (d: string) => new Date(d + 'T12:00:00');
+  const isWeekend = (d: string) => { const g = dObj(d).getDay(); return g === 0 || g === 6; };
+  const shortDate = (d: string) => dObj(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+  // Occupants of a room whose stay overlaps the range, earliest arrival first.
+  const occupantsOf = (roomKey: string) =>
+    members
+      .filter(m => m.arriveDate && m.departDate && effectiveRoom(m.room, m.name) === roomKey)
+      .map(m => ({ name: m.name, a: String(m.arriveDate).slice(0, 10), d: String(m.departDate).slice(0, 10) }))
+      .filter(o => o.a <= toDate && o.d >= fromDate)
+      .sort((x, y) => (x.a !== y.a ? (x.a < y.a ? -1 : 1) : (x.name < y.name ? -1 : 1)));
+
+  // Month bands across the day columns (colspan per contiguous month).
+  const bands: { label: string; span: number }[] = [];
+  days.forEach(d => {
+    const label = dObj(d).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const last = bands[bands.length - 1];
+    if (last && last.label === label) last.span++;
+    else bands.push({ label, span: 1 });
+  });
+  const monthHeader = bands.map(b => `<th colspan="${b.span}" class="month">${escapeHtml(b.label)}</th>`).join('');
+  const dayHeader = days.map(d => {
+    const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : ''].filter(Boolean).join(' ');
+    return `<th class="${cls}">${dObj(d).getDate()}</th>`;
+  }).join('');
+
+  const emptyDayCells = () =>
+    days.map(d => {
+      const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : ''].filter(Boolean).join(' ');
+      return `<td class="${cls}"></td>`;
+    }).join('');
+
+  let shownRooms = 0;
+  const bodyRows = ROOMS.map(room => {
+    const occ = occupantsOf(room.key);
+    if (hideEmpty && occ.length === 0) return '';
+    shownRooms++;
+    const owner = 'owner' in room ? room.owner : null;
+    const roomCell = `<td class="room" rowspan="${Math.max(1, occ.length)}">`
+      + `<span class="rn">${escapeHtml(room.label)}</span>`
+      + (owner ? `<span class="ro">${escapeHtml(owner)}'s</span>` : '')
+      + `</td>`;
+
+    if (occ.length === 0) {
+      return `<tr>${roomCell}<td class="guest empty">— free —</td>${emptyDayCells()}</tr>`;
+    }
+
+    return occ.map((o, i) => {
+      const color = avatarColor(o.name);
+      const cells = days.map(d => {
+        const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : ''].filter(Boolean).join(' ');
+        const inStay = o.a <= d && d <= o.d;
+        return inStay
+          ? `<td class="${cls} bar" style="background:${color}"></td>`
+          : `<td class="${cls}"></td>`;
+      }).join('');
+      const guest = `<td class="guest">`
+        + `<span class="dot" style="background:${color}"></span>`
+        + `${escapeHtml(o.name)} <span class="gd">${shortDate(o.a)} – ${shortDate(o.d)}</span>`
+        + `</td>`;
+      return `<tr>${i === 0 ? roomCell : ''}${guest}${cells}</tr>`;
+    }).join('');
+  }).join('');
+
+  const rangeLabel = `${dObj(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – `
+    + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+  const roomsNote = hideEmpty ? `${shownRooms} occupied room${shownRooms === 1 ? '' : 's'}` : `all rooms`;
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Room Allocation — Les Joyeux</title><style>
+@page{size:A4 landscape;margin:1cm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;color:#1A1209;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:8px;margin-bottom:10px}
+.fleur{font-size:18px;color:#C8973D;display:block;margin-bottom:2px}
+h1{font-size:18px;font-style:italic;font-family:Georgia,serif;margin-bottom:2px}
+.subtitle{font-size:10px;color:#8B6245}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+col.room{width:2.6cm}col.guest{width:4cm}
+th,td{border:1px solid #E7D6A8;font-size:8px;overflow:hidden;text-align:center}
+thead th{background:#FAF6EC;color:#8B6245;font-weight:700}
+.month{font-size:9px;padding:3px 2px;border-bottom:1px solid #C8973D}
+.dc{padding:2px 0;height:16px}
+.we{background:#F3EEE0}
+.td{box-shadow:inset 0 0 0 2px #C85A2E}
+.room{text-align:left;padding:4px 6px;vertical-align:middle;background:#fff}
+.rn{display:block;font-size:10px;font-weight:700;color:#1A1209}
+.ro{display:block;font-size:8px;color:#8B6245}
+.guest{text-align:left;padding:3px 6px;font-size:9px;white-space:nowrap;vertical-align:middle}
+.guest.empty{color:#B8A98A;font-style:italic}
+.gd{color:#8B6245;font-size:8px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.bar{border-left-color:rgba(255,255,255,.35);border-right-color:rgba(255,255,255,.35)}
+tbody tr{page-break-inside:avoid}
+footer{margin-top:10px;text-align:center;font-size:9px;color:#B8956A}
+.hint{margin-top:6px;text-align:center;font-size:9px;color:#8B6245}
+.close-btn{display:block;margin:14px auto 0;padding:8px 22px;background:#2D5A3D;color:#F5EDD6;border:none;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer}
+@media print{.close-btn,.hint{display:none}}
+</style></head><body>
+<header>
+  <span class="fleur">✸</span>
+  <h1>Room Allocation</h1>
+  <p class="subtitle">${rangeLabel}  ·  ${roomsNote}</p>
+</header>
+<table>
+  <colgroup><col class="room"><col class="guest">${days.map(() => '<col>').join('')}</colgroup>
+  <thead>
+    <tr><th rowspan="2" class="room">Room</th><th rowspan="2" class="guest">Guest</th>${monthHeader}</tr>
+    <tr>${dayHeader}</tr>
+  </thead>
+  <tbody>${bodyRows}</tbody>
+</table>
+<p class="hint">Best printed in landscape · each bar shows a guest's stay · today marked in orange</p>
+<footer>Les Joyeux</footer>
+<button class="close-btn" onclick="window.close()">Close</button>
+<script>window.focus();window.print();<\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=1100,height=760');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 const BELL_COOLDOWN_MS = 5 * 60 * 1000;
 
 type BellType = 'lunch' | 'aperitif' | 'dinner' | 'custom';
@@ -865,6 +1002,71 @@ function RoomPickerModal({ member, busy, onPick, onClose }: {
   );
 }
 
+// A small web-only date field: a labelled box with a transparent native
+// <input type="date"> overlaid so tapping opens the browser's date picker.
+function PrintDateField({ label, value, min, onChange }: {
+  label: string; value: string; min?: string; onChange: (v: string) => void;
+}) {
+  return (
+    <View style={styles.printField}>
+      <Text style={styles.printFieldLabel}>{label}</Text>
+      <View style={styles.printFieldBox}>
+        <Text style={styles.printFieldValue}>{value ? formatDate(value) : '—'}</Text>
+        {Platform.OS === 'web' && (
+          <input
+            type="date"
+            value={value}
+            min={min}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.value) onChange(e.target.value); }}
+            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', border: 'none', padding: 0, margin: 0 } as React.CSSProperties}
+          />
+        )}
+      </View>
+    </View>
+  );
+}
+
+function RoomPrintModal({ visible, from, to, hideEmpty, onChangeFrom, onChangeTo, onToggleHideEmpty, onPrint, onClose }: {
+  visible: boolean;
+  from: string;
+  to: string;
+  hideEmpty: boolean;
+  onChangeFrom: (v: string) => void;
+  onChangeTo: (v: string) => void;
+  onToggleHideEmpty: () => void;
+  onPrint: () => void;
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
+          <Text style={styles.roomSheetTitle}>Print room schedule</Text>
+          <Text style={styles.printIntro}>Defaults to the whole summer — the first arrival to the last departure.</Text>
+
+          <View style={styles.printRow}>
+            <PrintDateField label="From" value={from} onChange={onChangeFrom} />
+            <PrintDateField label="To" value={to} min={from} onChange={onChangeTo} />
+          </View>
+
+          <TouchableOpacity style={styles.printCheckRow} onPress={onToggleHideEmpty} activeOpacity={0.7}>
+            <View style={[styles.printCheckbox, hideEmpty && styles.printCheckboxOn]}>
+              {hideEmpty && <Text style={styles.printCheckboxTick}>✓</Text>}
+            </View>
+            <Text style={styles.printCheckLabel}>Hide rooms with no one staying</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.printGoBtn} onPress={onPrint} activeOpacity={0.85}>
+            <Text style={styles.printGoBtnText}>🖨  Print (landscape)</Text>
+          </TouchableOpacity>
+          <Text style={styles.modalDismissHint}>Tap outside to close</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 export default function FamilyScreen() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('people');
@@ -893,6 +1095,11 @@ export default function FamilyScreen() {
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target (People tab)
   const [roomBusyId, setRoomBusyId] = useState<string | null>(null);
+  // Rooms print dialog
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printFrom, setPrintFrom] = useState('');
+  const [printTo, setPrintTo] = useState('');
+  const [printHideEmpty, setPrintHideEmpty] = useState(false);
   // Rooms timeline
   const [screenW, setScreenW] = useState(Dimensions.get('window').width);
   const roomsBodyScrollRef = useRef<ScrollView>(null);
@@ -1561,6 +1768,22 @@ export default function FamilyScreen() {
   const whoIn = (roomKey: string) => roomTimeline.byRoom[roomKey] ?? [];
   const shadeForCount = (n: number) => (n >= 3 ? styles.tlBar3 : n === 2 ? styles.tlBar2 : styles.tlBar1);
 
+  // Default print range = first arrival → last departure across everyone with dates
+  // (the whole summer). Falls back to today when nobody has planned a visit yet.
+  const summerSpan = useMemo(() => {
+    const withDates = members.filter(m => m.arriveDate && m.departDate);
+    if (!withDates.length) { const t = todayStr(); return { from: t, to: t }; }
+    const arrs = withDates.map(m => String(m.arriveDate).slice(0, 10));
+    const deps = withDates.map(m => String(m.departDate).slice(0, 10));
+    return { from: arrs.reduce((a, b) => (a < b ? a : b)), to: deps.reduce((a, b) => (a > b ? a : b)) };
+  }, [members]);
+
+  const openPrintDialog = () => {
+    setPrintFrom(summerSpan.from);
+    setPrintTo(summerSpan.to);
+    setPrintOpen(true);
+  };
+
   // Re-arm the "open on current week" centring whenever the tab is (re)entered
   // or the layout width changes (rotation/resize) — but NOT on a background data
   // refresh, so a poll can't yank the timeline back to the far left mid-scroll.
@@ -1687,6 +1910,12 @@ export default function FamilyScreen() {
             <View style={[styles.tlLegendSwatch, styles.tlBar3]} /><Text style={styles.tlLegendText}>3+</Text>
             <Text style={styles.tlLegendHint}>shade = people sharing · swipe for other weeks · set rooms on the People tab</Text>
           </View>
+
+          {Platform.OS === 'web' && (
+            <TouchableOpacity style={styles.printScheduleBtn} onPress={openPrintDialog} activeOpacity={0.8}>
+              <Text style={styles.printScheduleBtnText}>🖨  Print room schedule</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </View>
     );
@@ -1792,6 +2021,17 @@ export default function FamilyScreen() {
         busy={!!roomForMember && roomBusyId === roomForMember.id}
         onPick={(key) => { if (roomForMember) changeRoom(roomForMember.id, key); setRoomForMember(null); }}
         onClose={() => setRoomForMember(null)}
+      />
+      <RoomPrintModal
+        visible={printOpen}
+        from={printFrom}
+        to={printTo}
+        hideEmpty={printHideEmpty}
+        onChangeFrom={setPrintFrom}
+        onChangeTo={setPrintTo}
+        onToggleHideEmpty={() => setPrintHideEmpty(v => !v)}
+        onPrint={() => { printRoomAllocation(members, printFrom, printTo, printHideEmpty); setPrintOpen(false); }}
+        onClose={() => setPrintOpen(false)}
       />
     </View>
   );
@@ -2124,6 +2364,40 @@ const styles = StyleSheet.create({
   tlLegendSwatch: { width: 16, height: 12, borderRadius: 3 },
   tlLegendText: { fontSize: 11, fontWeight: '700', color: '#8B6245', marginRight: 6 },
   tlLegendHint: { fontSize: 11, color: '#B8956A', flexShrink: 1, minWidth: 150,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+
+  // Rooms print button + dialog
+  printScheduleBtn: {
+    alignSelf: 'center', marginTop: 4, marginBottom: 18, paddingVertical: 10, paddingHorizontal: 22,
+    borderRadius: 50, backgroundColor: '#2D5A3D',
+  },
+  printScheduleBtnText: { fontSize: 14, fontWeight: '700', color: '#F5EDD6',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  printIntro: { fontSize: 13, color: '#8B6245', marginBottom: 16, lineHeight: 18,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  printRow: { flexDirection: 'row', gap: 12 },
+  printField: { flex: 1 },
+  printFieldLabel: { fontSize: 12, fontWeight: '700', color: '#8B6245', marginBottom: 4,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  printFieldBox: {
+    borderWidth: 1, borderColor: '#EDD9A3', backgroundColor: '#FFFDF5', borderRadius: 10,
+    paddingVertical: 12, paddingHorizontal: 12, position: 'relative', justifyContent: 'center',
+  },
+  printFieldValue: { fontSize: 15, fontWeight: '600', color: '#5C3D2E',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  printCheckRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 },
+  printCheckbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: '#C8973D',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFDF5',
+  },
+  printCheckboxOn: { backgroundColor: '#C85A2E', borderColor: '#C85A2E' },
+  printCheckboxTick: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  printCheckLabel: { flex: 1, fontSize: 14, color: '#5C3D2E',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  printGoBtn: {
+    marginTop: 22, paddingVertical: 14, borderRadius: 50, backgroundColor: '#2D5A3D', alignItems: 'center',
+  },
+  printGoBtnText: { fontSize: 15, fontWeight: '700', color: '#F5EDD6',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
 
   // Room / member picker sheet

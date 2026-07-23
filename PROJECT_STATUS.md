@@ -191,7 +191,7 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 - [x] **Whole-visit booking** — the date picker is only a viewing lens; a room is booked for a person's entire stay. Not-coming/undecided members (no dates) never appear.
 - [x] **Occupancy timeline (Rooms tab redesign, 2026-07-19)** — the Rooms tab is now a read-only week-view chart: two frozen left columns (Room | Who = coloured initials), a horizontally scrollable 7-day timeline (snaps by week, sticky date header synced to the body, opens on the current week, today marker, weekend tint). One bar per room whose **shade deepens with occupant count** (1/2/3+, small count for ≥2) so you can see a room go from one person to two when a partner arrives mid-stay. Allocation stays on the People-tab member card (＋Add-from-room removed).
 - [x] **Rooms timeline scroll-reset fix (2026-07-22)** — the "open on current week" effect in `admin.tsx` listed `roomTimeline` in its deps; since `roomTimeline` is a `useMemo([members])` and every background poll replaces `members` with a fresh array, the effect re-fired every ~20-30s and `scrollTo`'d back to the current week (x=0 while today sits in the first week) — horizontally yanking the timeline to the far left mid-scroll. Fixed with a `roomsCenteredRef` guard so centring runs **once per tab activation / layout-width change**, never on a background refresh. This is the horizontal counterpart of the Auto-Refresh Gotcha.
-- [ ] Follow-up: print schedule by room/date.
+- [x] **Print room schedule (2026-07-23)** — a "🖨 Print room schedule" button on the Rooms tab (web only) opens a `RoomPrintModal`: configurable **From/To** dates that **default to the whole summer** (first arrival → last departure across everyone with dates), plus a **"Hide rooms with no one staying"** toggle. Prints a landscape, fit-to-page Gantt (`printRoomAllocation` in `admin.tsx`): rooms as rows in master-list order, one coloured bar per occupant spanning their stay, month-band + day-number header, weekend tint, today marker. `table-layout:fixed; width:100%` keeps it on the page at any range; `print-color-adjust:exact` ensures the bars actually print. Follows the existing `printDinnerGrid`/`printAperitifs` popup pattern.
 
 ### My Visit — Year Title & Attendance Status (2026-07-13)
 - [x] **Year in title** — My Visit page header now reads "My {current year} Visit".
@@ -241,7 +241,7 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 - [x] **Allocation of people to rooms** — see "Room Allocation" section above
 
 ### Admin features
-- [ ] Ability to print out schedule of all people, by room / date
+- [x] Ability to print out schedule of all people, by room / date — see "Print room schedule" under Room Allocation
 
 ### Authentication & Security
 - [ ] Add authorization/permissions per family member
