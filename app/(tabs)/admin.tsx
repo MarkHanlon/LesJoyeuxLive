@@ -418,8 +418,17 @@ function printRoomAllocation(
       : '<span class="empty">— free —</span>';
     const cells = days.map(d => {
       const n = occ.filter(o => o.a <= d && d <= o.d).length;
-      const cls = ['dc', isWeekend(d) ? 'we' : '', d === today ? 'td' : '', n > 0 ? shadeClass(n) : ''].filter(Boolean).join(' ');
-      return `<td class="${cls}">${n >= 2 ? n : ''}</td>`;
+      const arr = occ.some(o => o.a === d); // someone arrives here today
+      const dep = occ.some(o => o.d === d); // someone departs here today
+      const cls = [
+        'dc',
+        isWeekend(d) ? 'we' : '',
+        n > 0 ? shadeClass(n) : '',
+        arr ? 'arr' : '',
+        dep ? 'dep' : '',
+        d === today ? 'td' : '',
+      ].filter(Boolean).join(' ');
+      return `<td class="${cls}">${n >= 1 ? n : ''}</td>`;
     }).join('');
     const roomCell = `<td class="room"><span class="rn">${escapeHtml(room.label)}</span>`
       + (owner ? `<span class="ro">${escapeHtml(owner)}'s</span>` : '') + `</td>`;
@@ -450,9 +459,13 @@ th,td{border:1px solid #E7D6A8;font-size:9px;overflow:hidden;text-align:center}
 thead th{background:#FAF6EC;color:#8B6245;font-weight:700}
 .month{font-size:10px;padding:3px 2px;border-bottom:1px solid #C8973D}
 .dc{padding:3px 0;height:18px;font-weight:700;color:#4A2E12}
-.we{background:#EFE4C4}
-.td{box-shadow:inset 2px 0 0 #C85A2E}
+/* Order matters: weekend (lowest) < occupancy shade < arrival/departure.
+   Later rules of equal specificity win, so arr/dep override the shade. */
+.we{background:#E7E8EC}
 .b1{background:#EAD3A7}.b2{background:#D99C5B}.b3{background:#C97C3D}
+.arr{background:#B5D6A7}.dep{background:#E9BDB0}
+.arr.dep{background:linear-gradient(90deg,#B5D6A7 50%,#E9BDB0 50%)}
+.td{box-shadow:inset 2px 0 0 #C85A2E}
 .room{text-align:left;padding:5px 6px;vertical-align:middle;background:#fff}
 .rn{display:block;font-size:11px;font-weight:700;color:#1A1209}
 .ro{display:block;font-size:9px;color:#8B6245}
@@ -480,10 +493,12 @@ footer{margin-top:10px;text-align:center;font-size:9px;color:#B8956A}
   <tbody>${bodyRows}</tbody>
 </table>
 <div class="legend">
-  <span><span class="sw" style="background:#EAD3A7"></span>1 person</span>
-  <span><span class="sw" style="background:#D99C5B"></span>2 people</span>
-  <span><span class="sw" style="background:#C97C3D"></span>3+ people</span>
-  <span>· number = people sharing · today marked in orange</span>
+  <span><span class="sw" style="background:#EAD3A7"></span>1</span>
+  <span><span class="sw" style="background:#D99C5B"></span>2</span>
+  <span><span class="sw" style="background:#C97C3D"></span>3+ sharing</span>
+  <span><span class="sw" style="background:#B5D6A7"></span>arrives</span>
+  <span><span class="sw" style="background:#E9BDB0"></span>departs</span>
+  <span>· number = people in room · today marked orange</span>
 </div>
 <footer>Les Joyeux</footer>
 </div></div>
