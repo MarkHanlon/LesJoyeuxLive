@@ -113,6 +113,9 @@ type FamilyMember = {
   aperitif: string | null;
   saveLunch?: boolean | null;
   saveDinner?: boolean | null;
+  skipLunchToday?: boolean | null;
+  skipDinnerToday?: boolean | null;
+  skipAperitifToday?: boolean | null;
   avatar?: string | null;
   pickupNeeded?: boolean | null;
   pickupTime?: string | null;
@@ -164,6 +167,7 @@ const BEFORE_DINNER_SLOTS = new Set(['morning', 'lunchtime', 'afternoon']);
 
 function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
   if (!member.arriveDate || !member.departDate) return 'no';
+  if (date === todayStr() && member.skipDinnerToday) return 'no'; // opted out of dinner today
   const arrive = String(member.arriveDate).slice(0, 10);
   const depart = String(member.departDate).slice(0, 10);
   if (date < arrive || date > depart) return 'no';
@@ -177,6 +181,7 @@ function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | '
 
 function getLunchStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
   if (!member.arriveDate || !member.departDate) return 'no';
+  if (date === todayStr() && member.skipLunchToday) return 'no'; // opted out of lunch today
   const arrive = String(member.arriveDate).slice(0, 10);
   const depart = String(member.departDate).slice(0, 10);
   if (date < arrive || date > depart) return 'no';
@@ -327,8 +332,10 @@ function printAperitifs(members: FamilyMember[], fromDate: string, toDate: strin
     return true;
   });
 
+  const todayIso = todayStr();
   const cards = days.map(d => {
-    const present = presentOn(d);
+    // Drop anyone who has opted out of tonight's apéritif (today-scoped only).
+    const present = presentOn(d).filter(m => !(d === todayIso && m.skipAperitifToday));
     if (present.length === 0) return '';
     const counts: Record<string, number> = {};
     present.forEach(m => { const k = m.aperitif ?? '__undecided__'; counts[k] = (counts[k] ?? 0) + 1; });
@@ -716,6 +723,7 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
 
   const counts: Record<string, number> = {};
   for (const m of hereTonight) {
+    if (m.skipAperitifToday) continue; // opted out of tonight's apéritif
     const key = m.aperitif ?? '__undecided__';
     counts[key] = (counts[key] ?? 0) + 1;
   }
@@ -1035,6 +1043,9 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
                 {isHere && <Text style={styles.modalHereNow}>● Here now</Text>}
                 {member.saveLunch  && <Text style={styles.modalNote}>🍽  Lunch plate saved</Text>}
                 {member.saveDinner && <Text style={styles.modalNote}>🍽  Dinner plate saved</Text>}
+                {isHere && member.skipLunchToday && <Text style={styles.modalNote}>🚫  Skipping lunch today</Text>}
+                {isHere && member.skipDinnerToday && <Text style={styles.modalNote}>🚫  Skipping dinner tonight</Text>}
+                {isHere && member.skipAperitifToday && <Text style={styles.modalNote}>🚫  No apéritif tonight</Text>}
                 {member.pickupNeeded && (
                   <Text style={styles.modalTransport}>
                     🚗  Pick up{member.pickupTime ? ` at ${member.pickupTime}` : ''}{member.pickupFrom ? ` from ${member.pickupFrom}` : ''}

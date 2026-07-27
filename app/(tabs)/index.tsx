@@ -36,6 +36,7 @@ type Member = {
   departDate?: string;
   departSlot?: string;
   aperitif?: string;
+  skipAperitifToday?: boolean;
   visitUpdatedAt?: string;
 };
 
@@ -123,7 +124,7 @@ function buildNewsItems(members: Member[], today: string, currentUserId: string)
     ...upcoming.filter(m => daysUntil(m.arriveDate!) <= 14),
   ];
   relevant
-    .filter(m => m.aperitif && m.aperitif !== "I'll choose on the day!")
+    .filter(m => m.aperitif && m.aperitif !== "I'll choose on the day!" && !m.skipAperitifToday)
     .forEach(m => {
       items.push({
         key: `drink-${m.id}`,

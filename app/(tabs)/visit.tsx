@@ -97,6 +97,9 @@ type VisitPlan = {
   dropoffTo: string;
   room: string | null;   // legacy single room (read-only here)
   allocations: Allocation[]; // date-ranged room segments (read-only here)
+  skipLunchToday: boolean;    // today-scoped per-meal opt-outs
+  skipDinnerToday: boolean;
+  skipAperitifToday: boolean;
 };
 
 function todayStr(): string {
@@ -127,7 +130,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [] };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -317,6 +320,7 @@ export default function VisitScreen() {
   const [pendingDrink, setPendingDrink] = useState<DrinkKey | null>(null);
   const [isSavingDrink, setIsSavingDrink] = useState(false);
   const [drinkPickerOpen, setDrinkPickerOpen] = useState(false);
+  const [skippingMeal, setSkippingMeal] = useState<null | 'lunch' | 'dinner' | 'aperitif'>(null);
   const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -370,6 +374,9 @@ export default function VisitScreen() {
           dropoffTo:       d.dropoff_to ?? '',
           room:            d.room ?? null,
           allocations:     (d.allocations as Allocation[]) ?? [],
+          skipLunchToday:    !!d.skipLunchToday,
+          skipDinnerToday:   !!d.skipDinnerToday,
+          skipAperitifToday: !!d.skipAperitifToday,
         };
         setSaved(plan);
         setForm(plan);
@@ -380,7 +387,28 @@ export default function VisitScreen() {
   }, [user]);
 
   // Pause auto-refresh while the user is mid-edit so a poll can't wipe unsaved input.
-  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving);
+  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal);
+
+  // Toggle a today-scoped opt-out ("no lunch/dinner/aperitif today"). Optimistic.
+  async function toggleSkip(meal: 'lunch' | 'dinner' | 'aperitif') {
+    if (!user || !saved || skippingMeal) return;
+    const key = meal === 'lunch' ? 'skipLunchToday' : meal === 'dinner' ? 'skipDinnerToday' : 'skipAperitifToday';
+    const next = !saved[key];
+    setSkippingMeal(meal);
+    setSaved(prev => (prev ? { ...prev, [key]: next } : prev)); // optimistic
+    try {
+      const res = await fetch(`/api/visit/skip/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ meal, skip: next }),
+      });
+      if (!res.ok) setSaved(prev => (prev ? { ...prev, [key]: !next } : prev)); // revert on failure
+    } catch {
+      setSaved(prev => (prev ? { ...prev, [key]: !next } : prev));
+    } finally {
+      setSkippingMeal(null);
+    }
+  }
 
   function updateForm(partial: Partial<VisitPlan>) {
     setForm(prev => {
@@ -684,6 +712,34 @@ export default function VisitScreen() {
               </View>
             </>
           )}
+
+          {/* Per-day opt-outs — active only while you're actually here today */}
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryBlock}>
+            <Text style={styles.summaryEyebrow}>TONIGHT AT THE CHÂTEAU</Text>
+            <Text style={styles.skipHint}>
+              {isStaying ? 'Tap to skip a sitting today — resets tomorrow.' : 'Available while you’re here at the château.'}
+            </Text>
+            <View style={styles.skipRow}>
+              {([
+                { meal: 'lunch' as const,    label: 'No lunch today',     on: saved.skipLunchToday },
+                { meal: 'dinner' as const,   label: 'No dinner tonight',  on: saved.skipDinnerToday },
+                { meal: 'aperitif' as const, label: 'No apéritif tonight', on: saved.skipAperitifToday },
+              ]).map(b => (
+                <TouchableOpacity
+                  key={b.meal}
+                  style={[styles.skipPill, b.on && styles.skipPillOn, !isStaying && styles.skipPillDisabled]}
+                  onPress={() => toggleSkip(b.meal)}
+                  disabled={!isStaying || !!skippingMeal}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.skipPillText, b.on && styles.skipPillTextOn, !isStaying && styles.skipPillTextDisabled]}>
+                    {b.on ? '✓ ' : ''}{b.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           <View style={styles.summaryDivider} />
           <View style={styles.summaryBlock}>
@@ -1050,6 +1106,23 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 6,
   },
+  skipHint: {
+    fontSize: 12, color: '#8B6245', marginBottom: 10,
+    fontFamily: 'Raleway, system-ui, sans-serif',
+  },
+  skipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  skipPill: {
+    paddingVertical: 8, paddingHorizontal: 14, borderRadius: 50,
+    borderWidth: 1.5, borderColor: '#C8973D', backgroundColor: '#FFFDF5',
+  },
+  skipPillOn: { backgroundColor: '#C85A2E', borderColor: '#C85A2E' },
+  skipPillDisabled: { borderColor: '#E7D6A8', backgroundColor: '#F5EDD6', opacity: 0.6 },
+  skipPillText: {
+    fontSize: 13, fontWeight: '700', color: '#C8973D',
+    fontFamily: 'Raleway, system-ui, sans-serif',
+  },
+  skipPillTextOn: { color: '#F5EDD6' },
+  skipPillTextDisabled: { color: '#B8956A' },
   summaryDate: {
     fontSize: 22,
     fontFamily: 'Playfair Display, Georgia, serif',

@@ -185,6 +185,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         allocByUser = new Map(allocRows.map((r: any) => [r.userId, r.allocations]));
       } catch { /* room_allocations not migrated yet */ }
       const withAlloc = members.map((m: any) => ({ ...m, allocations: allocByUser.get(m.id) ?? [] }));
+      // Attach today's per-day meal/aperitif skips. Guarded so a pre-migration DB
+      // (columns absent) still works — every flag just defaults to false.
+      let skipByUser = new Map<string, any>();
+      try {
+        const skipRows = await db`
+          SELECT user_id AS "userId",
+                 (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
+                 (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
+                 (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday"
+          FROM visits
+        `;
+        skipByUser = new Map(skipRows.map((r: any) => [r.userId, r]));
+      } catch { /* skip_* columns not migrated yet */ }
+      const withSkips = withAlloc.map((m: any) => {
+        const s = skipByUser.get(m.id);
+        return {
+          ...m,
+          skipLunchToday: !!s?.skipLunchToday,
+          skipDinnerToday: !!s?.skipDinnerToday,
+          skipAperitifToday: !!s?.skipAperitifToday,
+        };
+      });
       // Annotate who is a site owner — but only reveal it to owners (keeps owner
       // identity from leaking). Resilient to the column not existing pre-migration.
       if (await callerIsOwner(db, userId)) {
@@ -193,9 +215,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const rows = await db`SELECT id FROM users WHERE is_owner = true`;
           ownerIds = new Set(rows.map((r: any) => r.id));
         } catch { /* is_owner not migrated yet */ }
-        return res.status(200).json(withAlloc.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
+        return res.status(200).json(withSkips.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
       }
-      return res.status(200).json(withAlloc);
+      return res.status(200).json(withSkips);
     }
 
     // GET|POST /api/visit/:id
@@ -237,7 +259,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `;
           allocations = agg?.allocations ?? [];
         } catch { /* room_allocations not migrated yet */ }
-        return res.status(200).json({ ...rows[0], allocations });
+        let skips = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false };
+        try {
+          const [s] = await db`
+            SELECT (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
+                   (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
+                   (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday"
+            FROM visits WHERE user_id = ${id} LIMIT 1
+          `;
+          if (s) skips = { skipLunchToday: !!s.skipLunchToday, skipDinnerToday: !!s.skipDinnerToday, skipAperitifToday: !!s.skipAperitifToday };
+        } catch { /* skip_* columns not migrated yet */ }
+        return res.status(200).json({ ...rows[0], allocations, ...skips });
       }
       if (method === 'POST') {
         const { arriveDate, arriveSlot, saveLunch, saveDinner, departDate, departSlot, aperitif,
@@ -321,6 +353,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `;
       }
       return res.status(200).json({ ok: true });
+    }
+
+    // PATCH /api/visit/skip/:id — per-day opt-out of a meal/aperitif (self-only).
+    // { meal: 'lunch'|'dinner'|'aperitif', skip: boolean }. Sets the matching skip
+    // date to today (skip) or clears it. Today-scoped, so it resets next day.
+    if (seg0 === 'visit' && seg1 === 'skip' && seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const userId = req.headers['x-user-id'] as string | undefined;
+      if (!userId || userId !== seg2) return res.status(401).json({ error: 'Unauthorized' });
+      const { meal, skip } = req.body ?? {};
+      if (meal !== 'lunch' && meal !== 'dinner' && meal !== 'aperitif')
+        return res.status(400).json({ error: 'Invalid meal' });
+      const on = !!skip;
+      const db = getDb();
+      if (meal === 'lunch') {
+        await db`UPDATE visits SET skip_lunch_date = CASE WHEN ${on} THEN CURRENT_DATE ELSE NULL END WHERE user_id = ${seg2}`;
+      } else if (meal === 'dinner') {
+        await db`UPDATE visits SET skip_dinner_date = CASE WHEN ${on} THEN CURRENT_DATE ELSE NULL END WHERE user_id = ${seg2}`;
+      } else {
+        await db`UPDATE visits SET skip_aperitif_date = CASE WHEN ${on} THEN CURRENT_DATE ELSE NULL END WHERE user_id = ${seg2}`;
+      }
+      return res.status(200).json({ ok: true, meal, skip: on });
     }
 
     // GET /api/status/:id  — caller must present their own id; used by AuthContext on startup
@@ -916,6 +970,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dropoff_to     TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS status         TEXT NOT NULL DEFAULT 'coming'`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS room           TEXT`;
+      // Per-day opt-outs (today-scoped, like tonight_aperitif): a column = CURRENT_DATE
+      // means the member is skipping that sitting today; resets automatically next day.
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS skip_lunch_date    DATE`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS skip_dinner_date   DATE`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS skip_aperitif_date DATE`;
       // Allow status-only rows (not coming / undecided) with no dates.
       await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;
