@@ -492,7 +492,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                      FROM room_allocations WHERE user_id = ${userId} AND id <> ${excludeId}`
           : await db`SELECT start_date::text AS start, end_date::text AS "end"
                      FROM room_allocations WHERE user_id = ${userId}`;
-        if (others.some((s: any) => start <= s.end && s.start <= end))
+        // Strict (night-model) overlap: conflict only on a shared night, so a shared
+        // boundary day (a same-day room move) is allowed; genuine overlaps are rejected.
+        if (others.some((s: any) => start < s.end && s.start < end))
           return 'That overlaps another room for this person';
         return null;
       };

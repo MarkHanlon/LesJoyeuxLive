@@ -81,8 +81,11 @@ export const allocationsForMember = (
   return owned && a && d ? [{ room: owned, start: a, end: d }] : [];
 };
 
-// Inclusive-range overlap test — shared by client + server allocation validation.
+// Night-model overlap test — shared by client + server allocation validation.
+// A person sleeps nights start..end-1, so two segments conflict only if they share a
+// night: `a.start < b.end && b.start < a.end`. A shared boundary day (a.end === b.start)
+// is allowed — that's a same-day room move (out of A / into B on the same date).
 export const segmentsOverlap = (
   a: { start: string; end: string },
   b: { start: string; end: string },
-): boolean => a.start <= b.end && b.start <= a.end;
+): boolean => a.start < b.end && b.start < a.end;
