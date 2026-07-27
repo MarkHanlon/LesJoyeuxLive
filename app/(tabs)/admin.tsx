@@ -467,7 +467,10 @@ function printRoomAllocation(
       ? [...new Set(occ.map(o => firstName(o.name)))].map(escapeHtml).join(', ')
       : '<span class="empty">— free —</span>';
     const cells = days.map(d => {
-      const n = occ.filter(o => o.a <= d && d <= o.d).length;
+      // People SLEEPING here on the night of day d. A person's end date is their
+      // checkout/move-out morning (not a night slept), so use start <= d < end —
+      // this stops a changeover day counting both the leaver and the arriver.
+      const n = occ.filter(o => o.a <= d && d < o.d).length;
       const arr = occ.some(o => o.a === d); // someone arrives here today
       const dep = occ.some(o => o.d === d); // someone departs here today
       const cls = [
@@ -551,7 +554,7 @@ footer{margin-top:10px;text-align:center;font-size:9px;color:#B8956A}
   <span><span class="sw" style="background:#B5D6A7"></span>arrives</span>
   <span><span class="sw" style="background:#E9BDB0"></span>departs</span>
   <span><span class="sw" style="border-left:2px dashed #5C3D2E;background:#fff"></span>🛏 changeover</span>
-  <span>· number = people in room · today marked orange</span>
+  <span>· number = people sleeping that night · today marked orange</span>
 </div>
 <footer>Les Joyeux</footer>
 </div></div>
