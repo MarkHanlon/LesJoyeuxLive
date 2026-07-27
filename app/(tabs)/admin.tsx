@@ -2101,7 +2101,7 @@ export default function FamilyScreen() {
   const ROOM_COL_W = 96;
   const WHO_COL_W = 38;
   const LEFT_W = ROOM_COL_W + WHO_COL_W;   // 134 total — unchanged
-  const ROW_H = 44;
+  const ROW_H = 52;
   const dayWidth = Math.max(30, Math.floor((screenW - LEFT_W) / 7));
 
   // Keep dayWidth responsive to rotation / resize.
@@ -2158,7 +2158,9 @@ export default function FamilyScreen() {
     const laneEnds: string[] = [];
     const placed: (RoomSeg & { lane: number })[] = [];
     sorted.forEach(s => {
-      let lane = laneEnds.findIndex(end => end < s.start); // inclusive ranges: free if lane ends before start
+      // Night-use model: bars run mid-day → mid-day, so a segment ending on day D and
+      // another starting on day D only touch at the midpoint → they may share a lane.
+      let lane = laneEnds.findIndex(end => end <= s.start);
       if (lane === -1) { lane = laneEnds.length; laneEnds.push(s.end); } else { laneEnds[lane] = s.end; }
       placed.push({ ...s, lane });
     });
@@ -2307,22 +2309,26 @@ export default function FamilyScreen() {
                         const si = days.indexOf(s.start), ei = days.indexOf(s.end);
                         const startIdx = si < 0 ? 0 : si;
                         const endIdx = ei < 0 ? days.length - 1 : ei;
-                        const width = (endIdx - startIdx + 1) * dayWidth;
-                        const showLabel = width >= dayWidth * 1.3 && laneH >= 12;
+                        // Night use: bar runs from the middle of the arrival day to the
+                        // middle of the departure day, so handoffs meet at the midpoint.
+                        const rawW = (endIdx - startIdx) * dayWidth;
+                        const width = rawW > 0 ? rawW : dayWidth * 0.6;
+                        const left = rawW > 0 ? (startIdx + 0.5) * dayWidth : (startIdx + 0.5) * dayWidth - width / 2;
+                        const showLabel = width >= 28 && laneH >= 12;
                         return (
                           <TouchableOpacity
                             key={s.memberId + s.start}
                             onPress={() => { const mm = members.find(x => x.id === s.memberId); if (mm) setSelectedMember(mm); }}
                             activeOpacity={0.7}
-                            style={[styles.tlSeg, { left: startIdx * dayWidth + 1, width: width - 2, top: s.lane * laneH + 1, height: laneH - 2, backgroundColor: avatarColor(s.name) }]}
+                            style={[styles.tlSeg, { left, width, top: s.lane * laneH + 1, height: laneH - 2, backgroundColor: avatarColor(s.name) }]}
                           >
-                            {showLabel && <Text style={styles.tlSegText} numberOfLines={1}>{initials(s.name)}</Text>}
+                            {showLabel && <Text style={styles.tlSegText} numberOfLines={1} ellipsizeMode="tail">{s.name}</Text>}
                           </TouchableOpacity>
                         );
                       })}
                       {/* changeover markers (beds to remake) */}
                       {days.map(d => marks.has(d) ? (
-                        <View key={'m' + d} style={[styles.tlChangeover, { left: days.indexOf(d) * dayWidth }]}>
+                        <View key={'m' + d} style={[styles.tlChangeover, { left: (days.indexOf(d) + 0.5) * dayWidth }]}>
                           <Text style={styles.tlChangeoverIcon}>🛏</Text>
                         </View>
                       ) : null)}
@@ -2796,8 +2802,8 @@ const styles = StyleSheet.create({
   tlBar3: { backgroundColor: '#C97C3D' },
   tlBarCount: { fontSize: 10, fontWeight: '800', color: '#4A2E12' },
   // Per-person allocation bar + label.
-  tlSeg: { position: 'absolute', borderRadius: 4, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, overflow: 'hidden' },
-  tlSegText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  tlSeg: { position: 'absolute', borderRadius: 4, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, overflow: 'hidden' },
+  tlSegText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   // Changeover marker: dashed divider at the day boundary + a bed glyph.
   tlChangeover: { position: 'absolute', top: 0, bottom: 0, borderLeftWidth: 2, borderLeftColor: '#5C3D2E', borderStyle: 'dashed' },
   tlChangeoverIcon: { fontSize: 10, marginLeft: -1, marginTop: -1 },
