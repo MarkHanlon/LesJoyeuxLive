@@ -18,7 +18,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
-import { ROOMS, roomLabel, effectiveRoom } from '../../constants/rooms';
+import { ROOMS, roomLabel, allocationsForMember, segmentsOverlap, type Allocation } from '../../constants/rooms';
 import { addDays, datesBetween, daysUntil, endOfWeek, formatDate, formatDateLong, slotLabel, startOfWeek, todayStr } from '../../utils/date';
 import { avatarColor, initials } from '../../utils/ui';
 
@@ -121,10 +121,14 @@ type FamilyMember = {
   dropoffTime?: string | null;
   dropoffTo?: string | null;
   visitStatus?: 'coming' | 'not_coming' | 'undecided' | null;
-  room?: string | null;
+  room?: string | null;            // legacy single-room (kept for the shim)
+  allocations?: Allocation[] | null; // date-ranged room segments (source of truth)
   isOwner?: boolean | null;
   isTest?: boolean | null;
 };
+
+// A placed room-allocation segment on the timeline (one person, one room, a range).
+type RoomSeg = { memberId: string; name: string; avatar?: string | null; start: string; end: string };
 
 type ChateauEvent = {
   id: string;
@@ -396,18 +400,33 @@ function printRoomAllocation(
   const isWeekend = (d: string) => { const g = dObj(d).getDay(); return g === 0 || g === 6; };
   const firstName = (n: string) => n.trim().split(/\s+/)[0];
 
-  // Occupants of a room whose stay overlaps the range.
-  const occupantsOf = (roomKey: string) =>
-    members
-      .filter(m => m.arriveDate && m.departDate && effectiveRoom(m.room, m.name) === roomKey)
-      .map(m => ({ name: m.name, a: String(m.arriveDate).slice(0, 10), d: String(m.departDate).slice(0, 10) }))
-      .filter(o => o.a <= toDate && o.d >= fromDate)
-      .sort((x, y) => (x.a !== y.a ? (x.a < y.a ? -1 : 1) : (x.name < y.name ? -1 : 1)));
+  // Per-room segments overlapping the range (one entry per person-stay in a room,
+  // so a person who moves appears in two rooms).
+  const occByRoom: Record<string, { name: string; a: string; d: string }[]> = {};
+  ROOMS.forEach(r => { occByRoom[r.key] = []; });
+  members.forEach(m => {
+    allocationsForMember(m.allocations, m).forEach(s => {
+      if (s.start <= toDate && s.end >= fromDate && occByRoom[s.room]) {
+        occByRoom[s.room].push({ name: m.name, a: s.start, d: s.end });
+      }
+    });
+  });
+  Object.values(occByRoom).forEach(occ =>
+    occ.sort((x, y) => (x.a !== y.a ? (x.a < y.a ? -1 : 1) : (x.name < y.name ? -1 : 1))));
+
+  // Bed turns over when a segment starts while a DIFFERENT person's segment ends
+  // the day before or the same day (matches the on-screen changeover rule).
+  const changeoverOf = (occ: { name: string; a: string; d: string }[]) => {
+    const marks = new Set<string>();
+    occ.forEach(s => {
+      const prev = addDays(s.a, -1);
+      if (occ.some(o => o.name !== s.name && (o.d === prev || o.d === s.a))) marks.add(s.a);
+    });
+    return marks;
+  };
 
   // Same ordering as the on-screen timeline: earliest first-arrival wins; rooms
   // with occupants sink above empty ones; ties fall back to master-list order.
-  const occByRoom: Record<string, { name: string; a: string; d: string }[]> = {};
-  ROOMS.forEach(r => { occByRoom[r.key] = occupantsOf(r.key); });
   const firstArrival: Record<string, string> = {};
   Object.entries(occByRoom).forEach(([k, occ]) => {
     if (occ.length) firstArrival[k] = occ.reduce((a, b) => (a.a < b.a ? a : b)).a;
@@ -443,8 +462,9 @@ function printRoomAllocation(
     if (hideEmpty && occ.length === 0) return '';
     shownRooms++;
     const owner = 'owner' in room ? room.owner : null;
+    const marks = changeoverOf(occ);
     const who = occ.length
-      ? occ.map(o => escapeHtml(firstName(o.name))).join(', ')
+      ? [...new Set(occ.map(o => firstName(o.name)))].map(escapeHtml).join(', ')
       : '<span class="empty">— free —</span>';
     const cells = days.map(d => {
       const n = occ.filter(o => o.a <= d && d <= o.d).length;
@@ -456,6 +476,7 @@ function printRoomAllocation(
         n > 0 ? shadeClass(n) : '',
         arr ? 'arr' : '',
         dep ? 'dep' : '',
+        marks.has(d) ? 'chg' : '',
         d === today ? 'td' : '',
       ].filter(Boolean).join(' ');
       return `<td class="${cls}">${n >= 1 ? n : ''}</td>`;
@@ -495,6 +516,7 @@ thead th{background:#FAF6EC;color:#8B6245;font-weight:700}
 .b1{background:#EAD3A7}.b2{background:#D99C5B}.b3{background:#C97C3D}
 .arr{background:#B5D6A7}.dep{background:#E9BDB0}
 .arr.dep{background:linear-gradient(90deg,#B5D6A7 50%,#E9BDB0 50%)}
+.chg{border-left:2px dashed #5C3D2E}
 .td{box-shadow:inset 2px 0 0 #C85A2E}
 .room{text-align:left;padding:5px 6px;vertical-align:middle;background:#fff}
 .rn{display:block;font-size:11px;font-weight:700;color:#1A1209}
@@ -528,6 +550,7 @@ footer{margin-top:10px;text-align:center;font-size:9px;color:#B8956A}
   <span><span class="sw" style="background:#C97C3D"></span>3+ sharing</span>
   <span><span class="sw" style="background:#B5D6A7"></span>arrives</span>
   <span><span class="sw" style="background:#E9BDB0"></span>departs</span>
+  <span><span class="sw" style="border-left:2px dashed #5C3D2E;background:#fff"></span>🛏 changeover</span>
   <span>· number = people in room · today marked orange</span>
 </div>
 <footer>Les Joyeux</footer>
@@ -800,7 +823,11 @@ function MemberCard({
   const hasVisit = !!(member.arriveDate && member.departDate);
   const isHere   = hasVisit && today >= member.arriveDate! && today <= member.departDate!;
   const isFuture = hasVisit && today < member.arriveDate!;
-  const effRoom  = hasVisit ? effectiveRoom(member.room, member.name) : null;
+  const segs = hasVisit ? allocationsForMember(member.allocations, member) : [];
+  const currentSeg = segs.find(s => today >= s.start && today <= s.end) ?? segs[0] ?? null;
+  const roomSummary = segs.length === 0 ? 'Assign'
+    : segs.length === 1 ? roomLabel(segs[0].room)
+    : `${segs.length} rooms`;
   const drinkIcon = member.aperitif ? (DRINK_ICONS[member.aperitif] ?? null) : null;
 
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
@@ -861,8 +888,10 @@ function MemberCard({
               🚗 Drop off{member.dropoffTime ? ` ${member.dropoffTime}` : ''}{member.dropoffTo ? ` · ${member.dropoffTo}` : ''}
             </Text>
           )}
-          {(isHere || isFuture) && effRoom && !managing && (
-            <Text style={styles.roomNote}>🛏 {roomLabel(effRoom)}</Text>
+          {(isHere || isFuture) && currentSeg && !managing && (
+            <Text style={styles.roomNote}>
+              🛏 {roomLabel(currentSeg.room)}{segs.length > 1 ? ` +${segs.length - 1}` : ''}
+            </Text>
           )}
         </View>
 
@@ -946,11 +975,11 @@ function MemberCard({
         </TouchableOpacity>
       )}
 
-      {/* Room allocation — admin manage mode, only for members with a visit */}
+      {/* Room allocation — admin manage mode, only for members with a dated visit */}
       {managing && onRoomPress && hasVisit && (
         <TouchableOpacity style={styles.roomAssignRow} onPress={onRoomPress} disabled={roomBusy} activeOpacity={0.7}>
-          <Text style={styles.roomAssignLabel}>🛏 Room</Text>
-          <Text style={styles.roomAssignValue}>{effRoom ? roomLabel(effRoom) : 'Assign'} ›</Text>
+          <Text style={styles.roomAssignLabel}>🛏 Rooms</Text>
+          <Text style={styles.roomAssignValue}>{roomSummary} ›</Text>
           {roomBusy && <ActivityIndicator size="small" color="#C85A2E" />}
         </TouchableOpacity>
       )}
@@ -967,7 +996,7 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
   const roleConf = ROLE_CONFIG[member.role] ?? ROLE_CONFIG.guest;
   const drinkIcon  = member.aperitif ? (DRINK_ICONS[member.aperitif]  ?? '🍷') : null;
   const drinkLabel = member.aperitif ? (DRINK_LABELS[member.aperitif] ?? member.aperitif) : null;
-  const effRoom = hasVisit ? effectiveRoom(member.room, member.name) : null;
+  const segs = hasVisit ? allocationsForMember(member.allocations, member) : [];
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -1025,13 +1054,18 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
                 )}
               </View>
 
-              {/* Room */}
-              {effRoom && (
+              {/* Room(s) */}
+              {segs.length > 0 && (
                 <>
                   <View style={styles.modalDivider} />
                   <View style={styles.modalSection}>
-                    <Text style={styles.modalEyebrow}>ROOM</Text>
-                    <Text style={styles.modalDateLine}>🛏  {roomLabel(effRoom)}</Text>
+                    <Text style={styles.modalEyebrow}>{segs.length > 1 ? 'ROOMS' : 'ROOM'}</Text>
+                    {segs.map((s, i) => (
+                      <Text key={i} style={styles.modalDateLine}>
+                        🛏  {roomLabel(s.room)}
+                        {segs.length > 1 && <Text style={styles.modalSlot}>  {formatDate(s.start)} – {formatDate(s.end)}</Text>}
+                      </Text>
+                    ))}
                   </View>
                 </>
               )}
@@ -1069,42 +1103,124 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
   );
 }
 
-// Pick a room for a given member (admin only).
-function RoomPickerModal({ member, busy, onPick, onClose }: {
+// Edit a member's date-ranged room allocations (admin only): list segments, add,
+// edit, or remove. `member` is looked up live by the parent so the list reflects
+// the latest allocations after each mutation.
+function SegmentEditorModal({ member, busy, onAdd, onUpdate, onRemove, onClose }: {
   member: FamilyMember | null;
   busy: boolean;
-  onPick: (roomKey: string | null) => void;
+  onAdd: (seg: { room: string; start: string; end: string }) => void;
+  onUpdate: (id: string, patch: { room: string; start: string; end: string }) => void;
+  onRemove: (id: string) => void;
   onClose: () => void;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null); // 'new' | allocation id | null
+  const [fRoom, setFRoom] = useState('');
+  const [fStart, setFStart] = useState('');
+  const [fEnd, setFEnd] = useState('');
+  const memberId = member?.id ?? null;
+  useEffect(() => { setEditingId(null); setFRoom(''); setFStart(''); setFEnd(''); }, [memberId]);
   if (!member) return null;
-  const current = effectiveRoom(member.room, member.name);
+
+  const stayStart = member.arriveDate ? String(member.arriveDate).slice(0, 10) : '';
+  const stayEnd = member.departDate ? String(member.departDate).slice(0, 10) : '';
+  const explicit = member.allocations ?? [];
+  const segs = allocationsForMember(explicit, member);
+  const isDefault = explicit.length === 0 && segs.length > 0; // synthesized owner default
+
+  const openAdd = () => { setEditingId('new'); setFRoom(''); setFStart(stayStart); setFEnd(stayEnd); };
+  const openEdit = (a: Allocation) => { setEditingId(a.id!); setFRoom(a.room); setFStart(a.start); setFEnd(a.end); };
+
+  let error: string | null = null;
+  if (editingId) {
+    if (!fRoom) error = 'Pick a room';
+    else if (!fStart || !fEnd) error = 'Pick both dates';
+    else if (fEnd < fStart) error = 'End must be on or after start';
+    else if (stayStart && fStart < stayStart) error = `Not before ${formatDate(stayStart)}`;
+    else if (stayEnd && fEnd > stayEnd) error = `Not after ${formatDate(stayEnd)}`;
+    else if (explicit.filter(a => a.id !== editingId).some(o => segmentsOverlap({ start: fStart, end: fEnd }, o)))
+      error = 'That overlaps another of their rooms';
+  }
+  const canSave = !!editingId && !error && !busy;
+  const save = () => {
+    if (!canSave) return;
+    if (editingId === 'new') onAdd({ room: fRoom, start: fStart, end: fEnd });
+    else onUpdate(editingId!, { room: fRoom, start: fStart, end: fEnd });
+    setEditingId(null);
+  };
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.roomSheet}>
-          <Text style={styles.roomSheetTitle}>Room for {member.name.split(' ')[0]}</Text>
-          <ScrollView style={{ maxHeight: 400 }}>
-            {ROOMS.map(r => {
-              const active = current === r.key;
-              const owner = 'owner' in r ? r.owner : null;
-              return (
-                <TouchableOpacity
-                  key={r.key}
-                  style={[styles.roomSheetRow, active && styles.roomSheetRowActive]}
-                  onPress={() => onPick(r.key)}
-                  disabled={busy}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.roomSheetRowText, active && styles.roomSheetRowTextActive]}>
-                    {r.label}{owner ? `  ·  ${owner}'s` : ''}
-                  </Text>
-                  {active && <Text style={styles.roomSheetCheck}>✓</Text>}
+          <Text style={styles.roomSheetTitle}>Rooms for {member.name.split(' ')[0]}</Text>
+          {stayStart && stayEnd && (
+            <Text style={styles.printIntro}>Stay: {formatDate(stayStart)} – {formatDate(stayEnd)}</Text>
+          )}
+          <ScrollView style={{ maxHeight: 420 }}>
+            {isDefault && (
+              <View style={styles.segDefaultRow}>
+                <Text style={styles.segDefaultText}>
+                  Auto: {roomLabel(segs[0].room)} (owned room) — add a segment to override.
+                </Text>
+              </View>
+            )}
+            {explicit.map(a => (
+              <View key={a.id} style={styles.segRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.segRoom}>{roomLabel(a.room)}</Text>
+                  <Text style={styles.segDates}>{formatDate(a.start)} – {formatDate(a.end)}</Text>
+                </View>
+                <TouchableOpacity onPress={() => openEdit(a)} disabled={busy} activeOpacity={0.7}>
+                  <Text style={styles.segAction}>Edit</Text>
                 </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity style={styles.roomSheetClear} onPress={() => onPick(null)} disabled={busy} activeOpacity={0.7}>
-              <Text style={styles.roomSheetClearText}>Clear allocation</Text>
-            </TouchableOpacity>
+                <TouchableOpacity onPress={() => onRemove(a.id!)} disabled={busy} activeOpacity={0.7}>
+                  <Text style={[styles.segAction, styles.segRemove]}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            {editingId ? (
+              <View style={styles.segForm}>
+                <Text style={styles.printFieldLabel}>Room</Text>
+                <ScrollView style={{ maxHeight: 150 }}>
+                  {ROOMS.map(r => {
+                    const active = fRoom === r.key;
+                    const owner = 'owner' in r ? r.owner : null;
+                    return (
+                      <TouchableOpacity
+                        key={r.key}
+                        style={[styles.roomSheetRow, active && styles.roomSheetRowActive]}
+                        onPress={() => setFRoom(r.key)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.roomSheetRowText, active && styles.roomSheetRowTextActive]}>
+                          {r.label}{owner ? `  ·  ${owner}'s` : ''}
+                        </Text>
+                        {active && <Text style={styles.roomSheetCheck}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <View style={styles.printRow}>
+                  <PrintDateField label="From" value={fStart} min={stayStart} max={fEnd || stayEnd} onChange={setFStart} />
+                  <PrintDateField label="To" value={fEnd} min={fStart || stayStart} max={stayEnd} onChange={setFEnd} />
+                </View>
+                {error && <Text style={styles.datesWarn}>{error}</Text>}
+                <View style={styles.segFormBtns}>
+                  <TouchableOpacity style={styles.segCancelBtn} onPress={() => setEditingId(null)} activeOpacity={0.7}>
+                    <Text style={styles.segCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.printGoBtn, { flex: 1, marginTop: 0 }, !canSave && { opacity: 0.5 }]} onPress={save} disabled={!canSave} activeOpacity={0.85}>
+                    <Text style={styles.printGoBtnText}>{editingId === 'new' ? 'Add room' : 'Save'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.segAddBtn} onPress={openAdd} disabled={busy} activeOpacity={0.8}>
+                <Text style={styles.segAddText}>＋ Add room segment</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
           {busy && <ActivityIndicator color="#C85A2E" style={{ marginTop: 8 }} />}
           <Text style={styles.modalDismissHint}>Tap outside to close</Text>
@@ -1116,8 +1232,8 @@ function RoomPickerModal({ member, busy, onPick, onClose }: {
 
 // A small web-only date field: a labelled box with a transparent native
 // <input type="date"> overlaid so tapping opens the browser's date picker.
-function PrintDateField({ label, value, min, onChange }: {
-  label: string; value: string; min?: string; onChange: (v: string) => void;
+function PrintDateField({ label, value, min, max, onChange }: {
+  label: string; value: string; min?: string; max?: string; onChange: (v: string) => void;
 }) {
   return (
     <View style={styles.printField}>
@@ -1129,6 +1245,7 @@ function PrintDateField({ label, value, min, onChange }: {
             type="date"
             value={value}
             min={min}
+            max={max}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.value) onChange(e.target.value); }}
             style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', border: 'none', padding: 0, margin: 0 } as React.CSSProperties}
           />
@@ -1292,7 +1409,7 @@ export default function FamilyScreen() {
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
-  const [roomForMember, setRoomForMember] = useState<FamilyMember | null>(null); // room picker target (People tab)
+  const [segmentMemberId, setSegmentMemberId] = useState<string | null>(null); // segment-editor target (People tab)
   const [roomBusyId, setRoomBusyId] = useState<string | null>(null);
   const [datesForMember, setDatesForMember] = useState<FamilyMember | null>(null); // date-edit target (manage mode)
   const [datesBusyId, setDatesBusyId] = useState<string | null>(null);
@@ -1510,21 +1627,50 @@ export default function FamilyScreen() {
     }
   }
 
-  async function changeRoom(memberId: string, room: string | null) {
+  // Date-ranged room allocation mutators (admin, manage mode). Each refreshes from
+  // the server on success so the timeline and editor reflect the new segments.
+  const allocErr = (msg: string) => {
+    if (Platform.OS === 'web') window.alert(msg); else Alert.alert('Rooms', msg);
+  };
+
+  async function addAllocation(userId: string, seg: { room: string; start: string; end: string }) {
     if (!user) return;
-    setRoomBusyId(memberId);
+    setRoomBusyId(userId);
     try {
-      const res = await fetch(`/api/admin/room/${memberId}`, {
+      const res = await fetch('/api/admin/room-allocations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-id': user.id },
+        body: JSON.stringify({ userId, ...seg }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) await fetchAll(); else allocErr(body.error ?? 'Could not add room');
+    } finally { setRoomBusyId(null); }
+  }
+
+  async function updateAllocation(userId: string, id: string, patch: { room?: string; start?: string; end?: string }) {
+    if (!user) return;
+    setRoomBusyId(userId);
+    try {
+      const res = await fetch(`/api/admin/room-allocations/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'x-admin-id': user.id },
-        body: JSON.stringify({ room }),
+        body: JSON.stringify(patch),
       });
-      if (res.ok) {
-        setMembers(prev => prev.map(m => m.id === memberId ? { ...m, room } : m));
-      }
-    } finally {
-      setRoomBusyId(null);
-    }
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) await fetchAll(); else allocErr(body.error ?? 'Could not update room');
+    } finally { setRoomBusyId(null); }
+  }
+
+  async function removeAllocation(userId: string, id: string) {
+    if (!user) return;
+    setRoomBusyId(userId);
+    try {
+      const res = await fetch(`/api/admin/room-allocations/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-id': user.id },
+      });
+      if (res.ok) await fetchAll();
+    } finally { setRoomBusyId(null); }
   }
 
   // Admin fix-up of a member's arrival/departure dates (manage mode).
@@ -1703,7 +1849,7 @@ export default function FamilyScreen() {
             canGrantAdmin={!!user?.isOwner}
             onOwnerToggle={(managing && user?.isOwner && m.id !== user.id) ? (makeOwner) => changeOwner(m.id, makeOwner) : undefined}
             changingOwner={ownerBusyId === m.id}
-            onRoomPress={(managing && user?.isAdmin) ? () => setRoomForMember(m) : undefined}
+            onRoomPress={(managing && user?.isAdmin) ? () => setSegmentMemberId(m.id) : undefined}
             roomBusy={roomBusyId === m.id}
             onDatesPress={(managing && user?.isAdmin) ? () => setDatesForMember(m) : undefined}
             datesBusy={datesBusyId === m.id}
@@ -1965,28 +2111,29 @@ export default function FamilyScreen() {
   }, []);
 
   const roomTimeline = useMemo(() => {
-    const allocated = members.filter(m => m.arriveDate && m.departDate && effectiveRoom(m.room, m.name));
-    const byRoom: Record<string, FamilyMember[]> = {};
-    allocated.forEach(m => {
-      const k = effectiveRoom(m.room, m.name)!;
-      (byRoom[k] ||= []).push(m);
+    // Expand every member's effective allocations into placed segments per room.
+    const byRoom: Record<string, RoomSeg[]> = {};
+    members.forEach(m => {
+      allocationsForMember(m.allocations, m).forEach(s => {
+        (byRoom[s.room] ||= []).push({ memberId: m.id, name: m.name, avatar: m.avatar, start: s.start, end: s.end });
+      });
     });
     const today = todayStr();
-    const arr = allocated.map(m => String(m.arriveDate).slice(0, 10));
-    const dep = allocated.map(m => String(m.departDate).slice(0, 10));
-    const minA = arr.length ? arr.reduce((a, b) => (a < b ? a : b)) : today;
-    const maxD = dep.length ? dep.reduce((a, b) => (a > b ? a : b)) : today;
+    const starts: string[] = [], ends: string[] = [];
+    Object.values(byRoom).forEach(arr => arr.forEach(s => { starts.push(s.start); ends.push(s.end); }));
+    const minA = starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : today;
+    const maxD = ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : today;
     const spanStart = startOfWeek(minA < today ? minA : today);
     const spanEnd = endOfWeek(maxD > today ? maxD : today);
-    // Gantt-style ordering: rooms whose occupants arrive earliest come first;
+    // Gantt-style ordering: rooms whose first segment starts earliest come first;
     // unused rooms sink to the bottom in master-list order.
-    const firstArrival: Record<string, string> = {};
+    const firstStart: Record<string, string> = {};
     Object.entries(byRoom).forEach(([k, ms]) => {
-      firstArrival[k] = ms.map(m => String(m.arriveDate).slice(0, 10)).reduce((a, b) => (a < b ? a : b));
+      firstStart[k] = ms.map(s => s.start).reduce((a, b) => (a < b ? a : b));
     });
     const idx = Object.fromEntries(ROOMS.map((r, i) => [r.key, i]));
     const orderedRooms = [...ROOMS].sort((a, b) => {
-      const fa = firstArrival[a.key], fb = firstArrival[b.key];
+      const fa = firstStart[a.key], fb = firstStart[b.key];
       if (fa && fb) return fa !== fb ? (fa < fb ? -1 : 1) : idx[a.key] - idx[b.key];
       if (fa) return -1;
       if (fb) return 1;
@@ -1995,11 +2142,39 @@ export default function FamilyScreen() {
     return { byRoom, days: datesBetween(spanStart, spanEnd), today, orderedRooms };
   }, [members]);
 
-  const occCount = (roomKey: string, date: string) =>
-    (roomTimeline.byRoom[roomKey] ?? []).filter(m =>
-      String(m.arriveDate).slice(0, 10) <= date && date <= String(m.departDate).slice(0, 10)).length;
-  const whoIn = (roomKey: string) => roomTimeline.byRoom[roomKey] ?? [];
-  const shadeForCount = (n: number) => (n >= 3 ? styles.tlBar3 : n === 2 ? styles.tlBar2 : styles.tlBar1);
+  // Distinct members occupying a room at any point (for the left "Who" chips), in
+  // order of first arrival into the room.
+  const whoIn = (roomKey: string) => {
+    const segs = [...(roomTimeline.byRoom[roomKey] ?? [])].sort((a, b) => (a.start < b.start ? -1 : 1));
+    const seen = new Set<string>();
+    const out: { id: string; name: string; avatar?: string | null }[] = [];
+    segs.forEach(s => { if (!seen.has(s.memberId)) { seen.add(s.memberId); out.push({ id: s.memberId, name: s.name, avatar: s.avatar }); } });
+    return out;
+  };
+
+  // Greedy lane packing so overlapping (shared) segments stack within the row.
+  const layoutLanes = (segs: RoomSeg[]) => {
+    const sorted = [...segs].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    const laneEnds: string[] = [];
+    const placed: (RoomSeg & { lane: number })[] = [];
+    sorted.forEach(s => {
+      let lane = laneEnds.findIndex(end => end < s.start); // inclusive ranges: free if lane ends before start
+      if (lane === -1) { lane = laneEnds.length; laneEnds.push(s.end); } else { laneEnds[lane] = s.end; }
+      placed.push({ ...s, lane });
+    });
+    return { placed, laneCount: Math.max(1, laneEnds.length) };
+  };
+
+  // Days on which a room's bed turns over (a segment starts while a DIFFERENT
+  // person's segment ends the day before or the same day) → staff remake beds.
+  const changeoverDays = (segs: RoomSeg[]) => {
+    const marks = new Set<string>();
+    segs.forEach(s => {
+      const prev = addDays(s.start, -1);
+      if (segs.some(o => o.memberId !== s.memberId && (o.end === prev || o.end === s.start))) marks.add(s.start);
+    });
+    return marks;
+  };
 
   // Default print range = first arrival → last departure across everyone with dates
   // (the whole summer). Falls back to today when nobody has planned a visit yet.
@@ -2089,12 +2264,12 @@ export default function FamilyScreen() {
                       {owner && <Text style={styles.tlRoomOwner} numberOfLines={1}>{owner}'s</Text>}
                     </View>
                     <View style={styles.tlWho}>
-                      {who.slice(0, 3).map(m => (
-                        <TouchableOpacity key={m.id} onPress={() => setSelectedMember(m)} activeOpacity={0.7}>
-                          {m.avatar
-                            ? <Image source={{ uri: m.avatar }} style={styles.tlChip} />
-                            : <View style={[styles.tlChip, styles.tlChipFallback, { backgroundColor: avatarColor(m.name) }]}>
-                                <Text style={styles.tlChipText}>{initials(m.name)}</Text>
+                      {who.slice(0, 3).map(w => (
+                        <TouchableOpacity key={w.id} onPress={() => { const mm = members.find(x => x.id === w.id); if (mm) setSelectedMember(mm); }} activeOpacity={0.7}>
+                          {w.avatar
+                            ? <Image source={{ uri: w.avatar }} style={styles.tlChip} />
+                            : <View style={[styles.tlChip, styles.tlChipFallback, { backgroundColor: avatarColor(w.name) }]}>
+                                <Text style={styles.tlChipText}>{initials(w.name)}</Text>
                               </View>}
                         </TouchableOpacity>
                       ))}
@@ -2116,32 +2291,52 @@ export default function FamilyScreen() {
               style={{ width: screenW - LEFT_W }}
             >
               <View style={{ width: contentW }}>
-                {orderedRooms.map(room => (
-                  <View key={room.key} style={[styles.tlBarRow, { height: ROW_H, width: contentW }]}>
-                    {days.map(d => {
-                      const n = occCount(room.key, d);
-                      return (
-                        <View key={d} style={[styles.tlCell, { width: dayWidth }, isWeekend(d) && styles.tlWeekend, d === today && styles.tlTodayCol]}>
-                          {n > 0 && (
-                            <View style={[styles.tlBar, shadeForCount(n)]}>
-                              <Text style={styles.tlBarCount}>{n}</Text>
-                            </View>
-                          )}
+                {orderedRooms.map(room => {
+                  const segs = roomTimeline.byRoom[room.key] ?? [];
+                  const { placed, laneCount } = layoutLanes(segs);
+                  const marks = changeoverDays(segs);
+                  const laneH = ROW_H / laneCount;
+                  return (
+                    <View key={room.key} style={[styles.tlBarRow, { height: ROW_H, width: contentW }]}>
+                      {/* day-grid background (weekend / today tint) */}
+                      {days.map(d => (
+                        <View key={d} style={[styles.tlCell, { width: dayWidth }, isWeekend(d) && styles.tlWeekend, d === today && styles.tlTodayCol]} />
+                      ))}
+                      {/* one coloured bar per person-stay, stacked into lanes */}
+                      {placed.map(s => {
+                        const si = days.indexOf(s.start), ei = days.indexOf(s.end);
+                        const startIdx = si < 0 ? 0 : si;
+                        const endIdx = ei < 0 ? days.length - 1 : ei;
+                        const width = (endIdx - startIdx + 1) * dayWidth;
+                        const showLabel = width >= dayWidth * 1.3 && laneH >= 12;
+                        return (
+                          <TouchableOpacity
+                            key={s.memberId + s.start}
+                            onPress={() => { const mm = members.find(x => x.id === s.memberId); if (mm) setSelectedMember(mm); }}
+                            activeOpacity={0.7}
+                            style={[styles.tlSeg, { left: startIdx * dayWidth + 1, width: width - 2, top: s.lane * laneH + 1, height: laneH - 2, backgroundColor: avatarColor(s.name) }]}
+                          >
+                            {showLabel && <Text style={styles.tlSegText} numberOfLines={1}>{initials(s.name)}</Text>}
+                          </TouchableOpacity>
+                        );
+                      })}
+                      {/* changeover markers (beds to remake) */}
+                      {days.map(d => marks.has(d) ? (
+                        <View key={'m' + d} style={[styles.tlChangeover, { left: days.indexOf(d) * dayWidth }]}>
+                          <Text style={styles.tlChangeoverIcon}>🛏</Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                ))}
+                      ) : null)}
+                    </View>
+                  );
+                })}
               </View>
             </ScrollView>
           </View>
 
           {/* Legend */}
           <View style={styles.tlLegend}>
-            <View style={[styles.tlLegendSwatch, styles.tlBar1]} /><Text style={styles.tlLegendText}>1</Text>
-            <View style={[styles.tlLegendSwatch, styles.tlBar2]} /><Text style={styles.tlLegendText}>2</Text>
-            <View style={[styles.tlLegendSwatch, styles.tlBar3]} /><Text style={styles.tlLegendText}>3+</Text>
-            <Text style={styles.tlLegendHint}>shade = people sharing · swipe for other weeks · set rooms on the People tab</Text>
+            <Text style={styles.tlLegendText}>🛏 = beds to remake</Text>
+            <Text style={styles.tlLegendHint}>each bar = one person's stay · stacked bars = sharing · tap a bar for details · set rooms on the People tab</Text>
           </View>
 
           {Platform.OS === 'web' && (
@@ -2249,11 +2444,13 @@ export default function FamilyScreen() {
         : renderRoomsTab()}
 
       <MemberDetailModal member={selectedMember} onClose={() => setSelectedMember(null)} />
-      <RoomPickerModal
-        member={roomForMember}
-        busy={!!roomForMember && roomBusyId === roomForMember.id}
-        onPick={(key) => { if (roomForMember) changeRoom(roomForMember.id, key); setRoomForMember(null); }}
-        onClose={() => setRoomForMember(null)}
+      <SegmentEditorModal
+        member={members.find(m => m.id === segmentMemberId) ?? null}
+        busy={!!segmentMemberId && roomBusyId === segmentMemberId}
+        onAdd={(seg) => { if (segmentMemberId) addAllocation(segmentMemberId, seg); }}
+        onUpdate={(id, patch) => { if (segmentMemberId) updateAllocation(segmentMemberId, id, patch); }}
+        onRemove={(id) => { if (segmentMemberId) removeAllocation(segmentMemberId, id); }}
+        onClose={() => setSegmentMemberId(null)}
       />
       <RoomPrintModal
         visible={printOpen}
@@ -2598,6 +2795,12 @@ const styles = StyleSheet.create({
   tlBar2: { backgroundColor: '#D99C5B' },
   tlBar3: { backgroundColor: '#C97C3D' },
   tlBarCount: { fontSize: 10, fontWeight: '800', color: '#4A2E12' },
+  // Per-person allocation bar + label.
+  tlSeg: { position: 'absolute', borderRadius: 4, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, overflow: 'hidden' },
+  tlSegText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  // Changeover marker: dashed divider at the day boundary + a bed glyph.
+  tlChangeover: { position: 'absolute', top: 0, bottom: 0, borderLeftWidth: 2, borderLeftColor: '#5C3D2E', borderStyle: 'dashed' },
+  tlChangeoverIcon: { fontSize: 10, marginLeft: -1, marginTop: -1 },
   tlLegend: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 14, flexWrap: 'wrap' },
   tlLegendSwatch: { width: 16, height: 12, borderRadius: 3 },
   tlLegendText: { fontSize: 11, fontWeight: '700', color: '#8B6245', marginRight: 6 },
@@ -2660,6 +2863,27 @@ const styles = StyleSheet.create({
   roomSheetClearText: { fontSize: 14, color: '#B8956A', textDecorationLine: 'underline',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
   roomSheetEmpty: { fontSize: 14, color: '#8B6245', fontStyle: 'italic', paddingVertical: 12,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  // Segment editor
+  segDefaultRow: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#F3ECDD', marginBottom: 8 },
+  segDefaultText: { fontSize: 13, color: '#8B6245', fontStyle: 'italic',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  segRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: '#EDD9A3', backgroundColor: '#FFFDF5', marginBottom: 6 },
+  segRoom: { fontSize: 15, fontWeight: '700', color: '#5C3D2E',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  segDates: { fontSize: 12, color: '#8B6245', marginTop: 1,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  segAction: { fontSize: 13, fontWeight: '700', color: '#2D5A3D' },
+  segRemove: { color: '#C85A2E' },
+  segAddBtn: { paddingVertical: 12, alignItems: 'center', borderRadius: 10, borderWidth: 1,
+    borderColor: '#C8973D', borderStyle: 'dashed', marginTop: 4 },
+  segAddText: { fontSize: 14, fontWeight: '700', color: '#C8973D',
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  segForm: { marginTop: 6, padding: 10, borderRadius: 12, backgroundColor: '#FBF6EA', borderWidth: 1, borderColor: '#EDD9A3' },
+  segFormBtns: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
+  segCancelBtn: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 50, borderWidth: 1, borderColor: '#EDD9A3' },
+  segCancelText: { fontSize: 15, fontWeight: '700', color: '#8B6245',
     fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
 });
 

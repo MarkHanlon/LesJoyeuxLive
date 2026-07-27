@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import { effectiveRoom, roomLabel } from '../../constants/rooms';
+import { allocationsForMember, roomLabel, type Allocation } from '../../constants/rooms';
 import { avatarColor, initials } from '../../utils/ui';
 
 const VISIT_REFRESH_MS = 30000;
@@ -95,7 +95,8 @@ type VisitPlan = {
   dropoffNeeded: boolean;
   dropoffTime: string;
   dropoffTo: string;
-  room: string | null;   // allocated by admins; read-only here
+  room: string | null;   // legacy single room (read-only here)
+  allocations: Allocation[]; // date-ranged room segments (read-only here)
 };
 
 function todayStr(): string {
@@ -126,7 +127,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [] };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -368,6 +369,7 @@ export default function VisitScreen() {
           dropoffTime:     d.dropoff_time ?? '',
           dropoffTo:       d.dropoff_to ?? '',
           room:            d.room ?? null,
+          allocations:     (d.allocations as Allocation[]) ?? [],
         };
         setSaved(plan);
         setForm(plan);
@@ -576,9 +578,12 @@ export default function VisitScreen() {
                 🚗  Pick up{saved.pickupTime ? ` at ${saved.pickupTime}` : ''}{saved.pickupFrom ? ` from ${saved.pickupFrom}` : ''}
               </Text>
             )}
-            {effectiveRoom(saved.room, user?.name) && (
-              <Text style={styles.roomNote}>🛏  Your room: {roomLabel(effectiveRoom(saved.room, user?.name))}</Text>
-            )}
+            {allocationsForMember(saved.allocations, { name: user?.name, arriveDate: saved.arriveDate, departDate: saved.departDate }).map((s, i, arr) => (
+              <Text key={i} style={styles.roomNote}>
+                🛏  {arr.length > 1 ? 'Room: ' : 'Your room: '}{roomLabel(s.room)}
+                {arr.length > 1 ? `  (${formatDate(s.start)} – ${formatDate(s.end)})` : ''}
+              </Text>
+            ))}
           </View>
 
           {saved && (

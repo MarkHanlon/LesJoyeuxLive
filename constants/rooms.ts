@@ -48,5 +48,41 @@ export const defaultRoomForName = (name?: string | null): string | null => {
 };
 
 // The effective room for a person: an explicit allocation wins over the owner default.
+// Retained for single-room needs (e.g. "which room is this person in today?").
 export const effectiveRoom = (explicit?: string | null, name?: string | null): string | null =>
   explicit ?? defaultRoomForName(name);
+
+// ── Date-ranged room allocations ──────────────────────────────────────────────
+// A person can occupy a room for part of their stay, then move. Ranges are
+// INCLUSIVE (a person occupies `room` on every day from start..end); one room per
+// person per day. Shared by the app and the Vercel API (relative import).
+
+export type Allocation = { id?: string; room: string; start: string; end: string };
+
+type DatedMember = { name?: string | null; arriveDate?: string | null; departDate?: string | null };
+
+const ymd = (d?: string | null): string | null => (d ? String(d).slice(0, 10) : null);
+
+// The effective segment list for a member: their explicit allocations (sorted by
+// start) if any; otherwise a single synthesized whole-stay segment when they own a
+// room and have a visit; otherwise none. The owner default is NEVER stored in the
+// DB — it's computed identically here on client and server, and disappears the
+// moment any explicit segment exists.
+export const allocationsForMember = (
+  explicit: Allocation[] | null | undefined,
+  member: DatedMember,
+): Allocation[] => {
+  if (explicit && explicit.length) {
+    return [...explicit].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+  }
+  const owned = defaultRoomForName(member.name);
+  const a = ymd(member.arriveDate);
+  const d = ymd(member.departDate);
+  return owned && a && d ? [{ room: owned, start: a, end: d }] : [];
+};
+
+// Inclusive-range overlap test — shared by client + server allocation validation.
+export const segmentsOverlap = (
+  a: { start: string; end: string },
+  b: { start: string; end: string },
+): boolean => a.start <= b.end && b.start <= a.end;

@@ -169,6 +169,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE u.status = 'approved'
         ORDER BY u.name ASC
       `;
+      // Attach date-ranged room allocations per member. Resilient to the table not
+      // existing pre-migration (falls back to [] so the app keeps working).
+      let allocByUser = new Map<string, any[]>();
+      try {
+        const allocRows = await db`
+          SELECT user_id AS "userId",
+                 json_agg(json_build_object(
+                   'id', id, 'room', room,
+                   'start', start_date::text, 'end', end_date::text
+                 ) ORDER BY start_date) AS allocations
+          FROM room_allocations
+          GROUP BY user_id
+        `;
+        allocByUser = new Map(allocRows.map((r: any) => [r.userId, r.allocations]));
+      } catch { /* room_allocations not migrated yet */ }
+      const withAlloc = members.map((m: any) => ({ ...m, allocations: allocByUser.get(m.id) ?? [] }));
       // Annotate who is a site owner — but only reveal it to owners (keeps owner
       // identity from leaking). Resilient to the column not existing pre-migration.
       if (await callerIsOwner(db, userId)) {
@@ -177,9 +193,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const rows = await db`SELECT id FROM users WHERE is_owner = true`;
           ownerIds = new Set(rows.map((r: any) => r.id));
         } catch { /* is_owner not migrated yet */ }
-        return res.status(200).json(members.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
+        return res.status(200).json(withAlloc.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
       }
-      return res.status(200).json(members);
+      return res.status(200).json(withAlloc);
     }
 
     // GET|POST /api/visit/:id
@@ -210,7 +226,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           FROM visits WHERE user_id = ${id} LIMIT 1
         `;
         if (rows.length === 0) return res.status(404).json({ visit: null });
-        return res.status(200).json(rows[0]);
+        let allocations: any[] = [];
+        try {
+          const [agg] = await db`
+            SELECT json_agg(json_build_object(
+                     'id', id, 'room', room,
+                     'start', start_date::text, 'end', end_date::text
+                   ) ORDER BY start_date) AS allocations
+            FROM room_allocations WHERE user_id = ${id}
+          `;
+          allocations = agg?.allocations ?? [];
+        } catch { /* room_allocations not migrated yet */ }
+        return res.status(200).json({ ...rows[0], allocations });
       }
       if (method === 'POST') {
         const { arriveDate, arriveSlot, saveLunch, saveDinner, departDate, departSlot, aperitif,
@@ -412,7 +439,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, owner: makeOwner });
     }
 
-    // PATCH /api/admin/room/:id — allocate (or clear) a room for a member's visit
+    // PATCH /api/admin/room/:id — DEPRECATED whole-stay shim kept for older clients.
+    // Rewrites the person's allocations to a single segment spanning their whole stay
+    // (or clears them). New clients use /api/admin/room-allocations instead.
     if (seg0 === 'admin' && seg1 === 'room' && seg2) {
       if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
       const adminId = req.headers['x-admin-id'] as string | undefined;
@@ -424,13 +453,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const db = getDb();
       const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
       if (!admin) return res.status(403).json({ error: 'Forbidden' });
-      const rows = await db`
-        UPDATE visits SET room = ${roomVal}, updated_at = NOW()
-        WHERE user_id = ${seg2}
-        RETURNING user_id
-      `;
-      if (rows.length === 0) return res.status(409).json({ error: 'That person has no visit yet' });
+      const [visit] = await db`SELECT arrive_date::text AS a, depart_date::text AS d FROM visits WHERE user_id = ${seg2}`;
+      if (!visit) return res.status(409).json({ error: 'That person has no visit yet' });
+      await db`DELETE FROM room_allocations WHERE user_id = ${seg2}`;
+      if (roomVal && visit.a && visit.d) {
+        await db`INSERT INTO room_allocations (user_id, room, start_date, end_date)
+                 VALUES (${seg2}, ${roomVal}, ${visit.a}, ${visit.d})`;
+      }
+      await db`UPDATE visits SET room = ${roomVal}, updated_at = NOW() WHERE user_id = ${seg2}`;
       return res.status(200).json({ ok: true, room: roomVal });
+    }
+
+    // /api/admin/room-allocations — date-ranged room allocations (admin only).
+    // POST creates; PATCH/:id edits; DELETE/:id removes. A person may hold several
+    // non-overlapping segments; different people may overlap in one room (sharing).
+    if (seg0 === 'admin' && seg1 === 'room-allocations') {
+      const adminId = req.headers['x-admin-id'] as string | undefined;
+      if (!adminId) return res.status(401).json({ error: 'Unauthorized' });
+      const db = getDb();
+      const [admin] = await db`SELECT id FROM users WHERE id = ${adminId} AND is_admin = true`;
+      if (!admin) return res.status(403).json({ error: 'Forbidden' });
+      const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+      // Validate a segment against the person's stay and their other segments.
+      // Returns an error string, or null if OK. `excludeId` skips a row (for edits).
+      const validateSegment = async (
+        userId: string, room: string, start: string, end: string, excludeId: string | null,
+      ): Promise<string | null> => {
+        if (typeof room !== 'string' || !VALID_ROOM_KEYS.has(room)) return 'Invalid room';
+        if (!DATE_RE.test(start) || !DATE_RE.test(end)) return 'Valid dates required';
+        if (end < start) return 'End date must be on or after start date';
+        const [visit] = await db`SELECT arrive_date::text AS a, depart_date::text AS d FROM visits WHERE user_id = ${userId}`;
+        if (!visit || !visit.a || !visit.d) return 'That person has no dated visit';
+        if (start < visit.a || end > visit.d) return 'Segment must be within the person\'s stay';
+        // Neon's http tagged template can't compose SQL fragments, so branch instead.
+        const others = excludeId
+          ? await db`SELECT start_date::text AS start, end_date::text AS "end"
+                     FROM room_allocations WHERE user_id = ${userId} AND id <> ${excludeId}`
+          : await db`SELECT start_date::text AS start, end_date::text AS "end"
+                     FROM room_allocations WHERE user_id = ${userId}`;
+        if (others.some((s: any) => start <= s.end && s.start <= end))
+          return 'That overlaps another room for this person';
+        return null;
+      };
+
+      if (!seg2) {
+        if (method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+        const { userId, room, start, end } = req.body ?? {};
+        if (typeof userId !== 'string') return res.status(400).json({ error: 'userId required' });
+        const err = await validateSegment(userId, room, start, end, null);
+        if (err) return res.status(400).json({ error: err });
+        const [row] = await db`
+          INSERT INTO room_allocations (user_id, room, start_date, end_date)
+          VALUES (${userId}, ${room}, ${start}, ${end})
+          RETURNING id, room, start_date::text AS start, end_date::text AS "end"
+        `;
+        return res.status(200).json({ ok: true, allocation: row });
+      }
+
+      // seg2 = allocation id
+      if (method === 'DELETE') {
+        await db`DELETE FROM room_allocations WHERE id = ${seg2}`;
+        return res.status(200).json({ ok: true });
+      }
+      if (method === 'PATCH') {
+        const [cur] = await db`
+          SELECT user_id AS "userId", room, start_date::text AS start, end_date::text AS "end"
+          FROM room_allocations WHERE id = ${seg2}
+        `;
+        if (!cur) return res.status(404).json({ error: 'Allocation not found' });
+        const { room, start, end } = req.body ?? {};
+        const room2 = typeof room === 'string' ? room : cur.room;
+        const start2 = typeof start === 'string' ? start : cur.start;
+        const end2 = typeof end === 'string' ? end : cur.end;
+        const err = await validateSegment(cur.userId, room2, start2, end2, seg2);
+        if (err) return res.status(400).json({ error: err });
+        const [row] = await db`
+          UPDATE room_allocations
+          SET room = ${room2}, start_date = ${start2}, end_date = ${end2}, updated_at = NOW()
+          WHERE id = ${seg2}
+          RETURNING id, room, start_date::text AS start, end_date::text AS "end"
+        `;
+        return res.status(200).json({ ok: true, allocation: row });
+      }
+      return res.status(405).json({ error: 'Method not allowed' });
     }
 
     // PATCH /api/admin/visit/:id — admin fixes a member's arrival/departure dates
@@ -813,6 +919,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN arrive_slot DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_slot DROP NOT NULL`;
+      // Date-ranged room allocations (source of truth going forward). `visits.room`
+      // is kept as a legacy/fallback column and backfilled once below.
+      await db`
+        CREATE TABLE IF NOT EXISTS room_allocations (
+          id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          room       TEXT        NOT NULL,
+          start_date DATE        NOT NULL,
+          end_date   DATE        NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await db`CREATE INDEX IF NOT EXISTS room_alloc_user_idx ON room_allocations(user_id)`;
+      await db`CREATE INDEX IF NOT EXISTS room_alloc_room_date_idx ON room_allocations(room, start_date, end_date)`;
+      // One-time backfill: turn each existing single-room allocation into a whole-stay
+      // segment. Idempotent — the NOT EXISTS guard means re-running never duplicates,
+      // and owner-default rooms (visits.room IS NULL) are left to client/server synthesis.
+      await db`
+        INSERT INTO room_allocations (user_id, room, start_date, end_date)
+        SELECT v.user_id, v.room, v.arrive_date, v.depart_date
+        FROM visits v
+        WHERE v.room IS NOT NULL
+          AND v.arrive_date IS NOT NULL
+          AND v.depart_date IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM room_allocations ra WHERE ra.user_id = v.user_id)
+      `;
       await db`
         CREATE TABLE IF NOT EXISTS push_subscriptions (
           id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
