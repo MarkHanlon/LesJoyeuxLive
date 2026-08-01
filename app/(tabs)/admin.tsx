@@ -1442,6 +1442,7 @@ export default function FamilyScreen() {
   const [screenW, setScreenW] = useState(Dimensions.get('window').width);
   const roomsBodyScrollRef = useRef<ScrollView>(null);
   const roomsHeadScrollRef = useRef<ScrollView>(null);
+  const roomsScrollXRef = useRef(0); // latest horizontal scroll offset (for the week arrows)
   // True once we've centred the timeline for the current tab activation, so
   // background refreshes (which rebuild roomTimeline) don't reset scroll.
   const roomsCenteredRef = useRef(false);
@@ -2243,8 +2244,27 @@ export default function FamilyScreen() {
     const wdInitial = (d: string) => ['S', 'M', 'T', 'W', 'T', 'F', 'S'][dObj(d).getDay()];
     const isWeekend = (d: string) => { const g = dObj(d).getDay(); return g === 0 || g === 6; };
 
+    // Page the timeline one week at a time (for mouse/keyboard users with no scrollbar).
+    // The header follows via the body's onScroll during the animated scroll.
+    const weekPx = dayWidth * 7;
+    const maxX = Math.max(0, contentW - (screenW - LEFT_W));
+    const pageWeek = (dir: -1 | 1) => {
+      const target = Math.max(0, Math.min(maxX, (Math.round(roomsScrollXRef.current / weekPx) + dir) * weekPx));
+      roomsBodyScrollRef.current?.scrollTo({ x: target, animated: true });
+    };
+
     return (
       <View style={styles.tlContainer}>
+        {/* Week nav — lets laptop users move across the range without a scrollbar */}
+        <View style={styles.tlNav}>
+          <Text style={styles.tlNavHint}>Move weeks</Text>
+          <TouchableOpacity style={styles.tlNavBtn} onPress={() => pageWeek(-1)} activeOpacity={0.7}>
+            <Text style={styles.tlNavBtnText}>‹</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tlNavBtn} onPress={() => pageWeek(1)} activeOpacity={0.7}>
+            <Text style={styles.tlNavBtnText}>›</Text>
+          </TouchableOpacity>
+        </View>
         {/* Header: corner + scrollable dates */}
         <View style={styles.tlHeaderRow}>
           <View style={[styles.tlCorner, { width: LEFT_W }]}>
@@ -2305,7 +2325,7 @@ export default function FamilyScreen() {
             <ScrollView
               horizontal
               ref={roomsBodyScrollRef}
-              onScroll={e => roomsHeadScrollRef.current?.scrollTo({ x: e.nativeEvent.contentOffset.x, animated: false })}
+              onScroll={e => { const x = e.nativeEvent.contentOffset.x; roomsScrollXRef.current = x; roomsHeadScrollRef.current?.scrollTo({ x, animated: false }); }}
               scrollEventThrottle={16}
               snapToInterval={dayWidth * 7}
               decelerationRate="fast"
@@ -2780,6 +2800,14 @@ const styles = StyleSheet.create({
 
   // Rooms occupancy timeline
   tlContainer: { flex: 1, backgroundColor: '#F5EDD6' },
+  tlNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  tlNavHint: { fontSize: 11, color: '#B8956A', marginRight: 2,
+    fontFamily: Platform.select({ web: 'Raleway, system-ui, sans-serif', default: undefined }) },
+  tlNavBtn: {
+    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#2D5A3D',
+  },
+  tlNavBtnText: { fontSize: 18, fontWeight: '800', color: '#F5EDD6', lineHeight: 20, marginTop: -2 },
   tlHeaderRow: { flexDirection: 'row', backgroundColor: '#FAF4E6', borderBottomWidth: 1, borderBottomColor: '#EDD9A3' },
   tlCorner: {
     flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
