@@ -257,7 +257,7 @@ function printDinnerGrid(members: FamilyMember[], fromDate: string, toDate: stri
         <tr><th rowspan="2" class="name"></th>${monthHeader}</tr>
         <tr>${dayHeader}</tr>
       </thead>
-      <tbody>${bodyRows(statusFn)}${totalsRow(statusFn)}</tbody>
+      <tbody>${totalsRow(statusFn)}${bodyRows(statusFn)}</tbody>
     </table>
     </section>`;
 
