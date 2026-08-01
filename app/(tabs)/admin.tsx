@@ -248,7 +248,8 @@ function printDinnerGrid(members: FamilyMember[], fromDate: string, toDate: stri
     return `<tr><td class="name total">Total</td>${cells}</tr>`;
   };
 
-  const table = (title: string, statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no') => `
+  const table = (title: string, statusFn: (m: FamilyMember, d: string) => 'yes' | 'keep' | 'no', cls = '') => `
+    <section class="meal ${cls}">
     <p class="section-title">${title}</p>
     <table>
       <colgroup><col class="name">${days.map(() => '<col>').join('')}</colgroup>
@@ -257,7 +258,8 @@ function printDinnerGrid(members: FamilyMember[], fromDate: string, toDate: stri
         <tr>${dayHeader}</tr>
       </thead>
       <tbody>${bodyRows(statusFn)}${totalsRow(statusFn)}</tbody>
-    </table>`;
+    </table>
+    </section>`;
 
   const rangeLabel = `${dObj(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – `
     + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
@@ -272,6 +274,8 @@ header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:8px;marg
 h1{font-size:18px;font-style:italic;font-family:Georgia,serif;margin-bottom:2px}
 .subtitle{font-size:11px;color:#8B6245}
 .section-title{font-size:12px;font-weight:700;color:#8B6245;margin:10px 0 4px}
+/* Print Dinner on a fresh page after Lunch. */
+.meal.break{break-before:page;page-break-before:always}
 table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:6px}
 col.name{width:32mm}
 th,td{border:1px solid #E7D6A8;font-size:8px;text-align:center;overflow:hidden}
@@ -300,7 +304,7 @@ footer{margin-top:8px;text-align:center;font-size:9px;color:#B8956A}
   <p class="subtitle">${rangeLabel}</p>
 </header>
 ${table('🥗 Lunch', getLunchStatus)}
-${table('🍷 Dinner', getDinnerStatus)}
+${table('🍷 Dinner', getDinnerStatus, 'break')}
 <div class="legend">
   <div class="legend-item"><span class="sw" style="background:#2D5A3D"></span> Present</div>
   <div class="legend-item"><span class="sw" style="background:#C8973D"></span> Keep plate (K)</div>
