@@ -362,13 +362,15 @@ header{text-align:center;border-bottom:2px solid #C8973D;padding-bottom:14px;mar
 .fleur{font-size:24px;color:#C8973D;display:block;margin-bottom:6px}
 h1{font-size:26px;font-style:italic;margin-bottom:4px}
 .subtitle{font-family:Arial,sans-serif;font-size:12px;color:#8B6245}
-.cards{column-width:58mm;column-gap:8mm}
-.card{break-inside:avoid;border:1px solid #EDD9A3;border-radius:8px;padding:8px 10px;margin-bottom:8px;display:inline-block;width:100%}
-.ch{display:flex;justify-content:space-between;align-items:center;font-family:Arial,sans-serif;font-weight:700;font-size:12px;color:#8B6245;border-bottom:1px solid #EDD9A3;padding-bottom:4px;margin-bottom:6px}
+/* Little content-width cards that flow and wrap — each only as wide as its
+   longest drink name + count, so the number sits right after the name. */
+.cards{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6mm}
+.card{break-inside:avoid;border:1px solid #EDD9A3;border-radius:8px;padding:8px 12px;display:inline-block;min-width:28mm}
+.ch{display:flex;align-items:center;gap:8px;white-space:nowrap;font-family:Arial,sans-serif;font-weight:700;font-size:12px;color:#8B6245;border-bottom:1px solid #EDD9A3;padding-bottom:4px;margin-bottom:6px}
 .chc{background:#2D5A3D;color:#F5EDD6;border-radius:10px;padding:0 7px;font-size:10px}
-.drow{display:flex;align-items:center;gap:6px;padding:2px 0}
+.drow{display:flex;align-items:center;gap:8px;padding:2px 0;white-space:nowrap}
 .di{font-size:16px;width:22px;text-align:center}
-.dl{flex:1;font-style:italic;font-size:13px}
+.dl{font-style:italic;font-size:13px}
 .dn{font-family:Arial,sans-serif;font-weight:700;color:#2D5A3D;font-size:13px}
 .none{text-align:center;color:#8B6245;font-style:italic;margin-top:20px}
 footer{margin-top:16px;border-top:1px solid #EDD9A3;padding-top:10px;text-align:center;font-family:Arial,sans-serif;font-size:10px;color:#B8956A}
