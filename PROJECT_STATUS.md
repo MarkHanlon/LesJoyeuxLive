@@ -201,6 +201,7 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 
 ### Rooms timeline: week arrows for laptop users (2026-07-27)
 - [x] The Rooms timeline's horizontal `ScrollView` was touch-drag only (hidden scrollbar), so a **mouse-only laptop user couldn't move across the date range**. Added a compact right-aligned **‹ / › "Move weeks"** control above the header that pages the timeline one week at a time (`pageWeek(dir)` → `roomsBodyScrollRef.scrollTo`, clamped to `[0, contentW − viewport]`; the header follows via the body's `onScroll`, which now also records the offset in `roomsScrollXRef`). No scrollbars; works with mouse + keyboard; touch drag still works. Rendering-only.
+- [x] **Arrows shown only when there's a mouse** — a `useHasMouse()` hook (`matchMedia('(hover: hover) and (pointer: fine)')`, live-updating) gates the "Move weeks" control so it appears on laptops/desktops but is **hidden on touch phones/tablets** (where it just wasted space; touch users drag). Falls back to hidden on non-web.
 
 ### Meals print: daily total on top (2026-07-27)
 - [x] Moved the per-day `Total` row in `printDinnerGrid` from the bottom to the **top** of each grid's body (`<tbody>${totalsRow}${bodyRows}</tbody>`), so each column reads day-number header → total → names. Layout only.

@@ -1403,8 +1403,25 @@ function VisitDatesModal({ member, busy, onSave, onClose }: {
   );
 }
 
+// True when the device has a mouse/trackpad (fine pointer that can hover) — i.e. a
+// laptop/desktop — and false on touch phones/tablets. Used to show pointer-only
+// affordances (the timeline week arrows) that would just waste space on a phone.
+function useHasMouse(): boolean {
+  const [hasMouse, setHasMouse] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const update = () => setHasMouse(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
+  return hasMouse;
+}
+
 export default function FamilyScreen() {
   const { user } = useAuth();
+  const hasMouse = useHasMouse();
   const [activeTab, setActiveTab] = useState<TabKey>('people');
   // Show the Events spinner only on first load — never on a background poll,
   // which would collapse the list height and reset Android scroll to the top.
@@ -2255,16 +2272,19 @@ export default function FamilyScreen() {
 
     return (
       <View style={styles.tlContainer}>
-        {/* Week nav — lets laptop users move across the range without a scrollbar */}
-        <View style={styles.tlNav}>
-          <Text style={styles.tlNavHint}>Move weeks</Text>
-          <TouchableOpacity style={styles.tlNavBtn} onPress={() => pageWeek(-1)} activeOpacity={0.7}>
-            <Text style={styles.tlNavBtnText}>‹</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tlNavBtn} onPress={() => pageWeek(1)} activeOpacity={0.7}>
-            <Text style={styles.tlNavBtnText}>›</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Week nav — mouse/laptop only (touch users just drag), so it doesn't
+            waste space on a phone. */}
+        {hasMouse && (
+          <View style={styles.tlNav}>
+            <Text style={styles.tlNavHint}>Move weeks</Text>
+            <TouchableOpacity style={styles.tlNavBtn} onPress={() => pageWeek(-1)} activeOpacity={0.7}>
+              <Text style={styles.tlNavBtnText}>‹</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.tlNavBtn} onPress={() => pageWeek(1)} activeOpacity={0.7}>
+              <Text style={styles.tlNavBtnText}>›</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* Header: corner + scrollable dates */}
         <View style={styles.tlHeaderRow}>
           <View style={[styles.tlCorner, { width: LEFT_W }]}>
