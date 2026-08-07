@@ -330,6 +330,7 @@ function printAperitifs(members: FamilyMember[], fromDate: string, toDate: strin
 
   // Who is here for the apéritif on a given evening (mirrors the Tonight card).
   const presentOn = (d: string) => members.filter(m => {
+    if (m.role === 'staff') return false; // staff aren't catered for
     if (!m.arriveDate || !m.departDate) return false;
     const a = String(m.arriveDate).slice(0, 10), dep = String(m.departDate).slice(0, 10);
     if (d < a || d > dep) return false;
@@ -419,6 +420,7 @@ function printRoomAllocation(
   const occByRoom: Record<string, { name: string; a: string; d: string }[]> = {};
   ROOMS.forEach(r => { occByRoom[r.key] = []; });
   members.forEach(m => {
+    if (m.role === 'staff') return; // staff don't occupy guest rooms
     allocationsForMember(m.allocations, m).forEach(s => {
       if (s.start <= toDate && s.end >= fromDate && occByRoom[s.room]) {
         occByRoom[s.room].push({ name: m.name, a: s.start, d: s.end });
@@ -718,6 +720,7 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
 
   const today = todayStr();
   const hereTonight = members.filter(m => {
+    if (m.role === 'staff') return false; // staff aren't catered for
     if (!m.arriveDate || !m.departDate) return false;
     if (today < m.arriveDate || today > m.departDate) return false;
     if (today === String(m.departDate).slice(0, 10) && BEFORE_DINNER_SLOTS.has(m.departSlot ?? '')) return false;
@@ -2161,6 +2164,7 @@ export default function FamilyScreen() {
     // Expand every member's effective allocations into placed segments per room.
     const byRoom: Record<string, RoomSeg[]> = {};
     members.forEach(m => {
+      if (m.role === 'staff') return; // staff don't occupy guest rooms
       allocationsForMember(m.allocations, m).forEach(s => {
         (byRoom[s.room] ||= []).push({ memberId: m.id, name: m.name, avatar: m.avatar, start: s.start, end: s.end });
       });

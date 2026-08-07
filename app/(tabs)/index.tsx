@@ -37,6 +37,7 @@ type Member = {
   departSlot?: string;
   aperitif?: string;
   skipAperitifToday?: boolean;
+  role?: string;
   visitUpdatedAt?: string;
 };
 
@@ -57,7 +58,7 @@ function firstName(name: string): string {
 
 function buildNewsItems(members: Member[], today: string, currentUserId: string): NewsItem[] {
   const items: NewsItem[] = [];
-  const others = members.filter(m => m.id !== currentUserId);
+  const others = members.filter(m => m.id !== currentUserId && m.role !== 'staff'); // staff aren't guests
   const withVisit = others.filter(m => m.arriveDate && m.departDate);
 
   // Currently visiting
