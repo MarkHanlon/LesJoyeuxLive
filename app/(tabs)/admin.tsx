@@ -847,6 +847,7 @@ function MemberCard({
   const hasVisit = !!(member.arriveDate && member.departDate);
   const isHere   = hasVisit && today >= member.arriveDate! && today <= member.departDate!;
   const isFuture = hasVisit && today < member.arriveDate!;
+  const isStaff = member.role === 'staff';
   const segs = hasVisit ? allocationsForMember(member.allocations, member) : [];
   const currentSeg = segs.find(s => today >= s.start && today <= s.end) ?? segs[0] ?? null;
   const roomSummary = segs.length === 0 ? 'Assign'
@@ -889,7 +890,9 @@ function MemberCard({
             )}
           </View>
 
-          {isHere ? (
+          {isStaff ? (
+            <Text style={styles.visitNone}>Always here 🎩</Text>
+          ) : isHere ? (
             <Text style={styles.visitHere}>● Here until {formatDate(member.departDate!)}</Text>
           ) : isFuture ? (
             <>
@@ -907,24 +910,24 @@ function MemberCard({
           ) : (
             <Text style={styles.visitNone}>No upcoming visit</Text>
           )}
-          {(isHere || isFuture) && member.pickupNeeded && (
+          {!isStaff && (isHere || isFuture) && member.pickupNeeded && (
             <Text style={styles.transportNote}>
               🚗 Pick up{member.pickupTime ? ` ${member.pickupTime}` : ''}{member.pickupFrom ? ` · ${member.pickupFrom}` : ''}
             </Text>
           )}
-          {(isHere || isFuture) && member.dropoffNeeded && (
+          {!isStaff && (isHere || isFuture) && member.dropoffNeeded && (
             <Text style={styles.transportNote}>
               🚗 Drop off{member.dropoffTime ? ` ${member.dropoffTime}` : ''}{member.dropoffTo ? ` · ${member.dropoffTo}` : ''}
             </Text>
           )}
-          {(isHere || isFuture) && currentSeg && !managing && (
+          {!isStaff && (isHere || isFuture) && currentSeg && !managing && (
             <Text style={styles.roomNote}>
               🛏 {roomLabel(currentSeg.room)}{segs.length > 1 ? ` +${segs.length - 1}` : ''}
             </Text>
           )}
         </View>
 
-        {drinkIcon && !managing && (
+        {!isStaff && drinkIcon && !managing && (
           <View style={styles.drinkBadgeWrap}>
             <Text style={styles.drinkBadge}>{drinkIcon}</Text>
             <Text style={styles.drinkBadgeLabel}>{DRINK_LABELS[member.aperitif!] ?? member.aperitif}</Text>
@@ -993,8 +996,8 @@ function MemberCard({
         </View>
       )}
 
-      {/* Arrival/departure dates — admin manage mode, fixes wrong data */}
-      {managing && onDatesPress && (
+      {/* Arrival/departure dates — admin manage mode, fixes wrong data (not for staff) */}
+      {managing && onDatesPress && !isStaff && (
         <TouchableOpacity style={styles.roomAssignRow} onPress={onDatesPress} disabled={datesBusy} activeOpacity={0.7}>
           <Text style={styles.roomAssignLabel}>📅 Dates</Text>
           <Text style={styles.roomAssignValue}>
@@ -1026,6 +1029,7 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
   const drinkIcon  = member.aperitif ? (DRINK_ICONS[member.aperitif]  ?? '🍷') : null;
   const drinkLabel = member.aperitif ? (DRINK_LABELS[member.aperitif] ?? member.aperitif) : null;
   const segs = hasVisit ? allocationsForMember(member.allocations, member) : [];
+  const isStaff = member.role === 'staff';
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -1050,7 +1054,12 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
 
           <View style={styles.modalDivider} />
 
-          {hasVisit ? (
+          {isStaff ? (
+            <View style={styles.modalSection}>
+              <Text style={styles.modalEyebrow}>ROLE</Text>
+              <Text style={styles.modalDateLine}>Staff · always here 🎩</Text>
+            </View>
+          ) : hasVisit ? (
             <>
               {/* Arriving */}
               <View style={styles.modalSection}>
@@ -1882,10 +1891,12 @@ export default function FamilyScreen() {
         </View>
       ) : (() => {
         const today = todayStr();
-        const hereNow      = members.filter(m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate);
-        const arrivingSoon = members.filter(m => m.arriveDate && today < m.arriveDate).sort((a, b) => a.arriveDate!.localeCompare(b.arriveDate!));
-        const alreadyLeft  = members.filter(m => m.departDate && today > m.departDate).sort((a, b) => b.departDate!.localeCompare(a.departDate!));
-        const noPlans      = members.filter(m => !m.arriveDate).sort((a, b) => a.name.localeCompare(b.name));
+        const guests = members.filter(m => m.role !== 'staff'); // staff live in their own section
+        const hereNow      = guests.filter(m => m.arriveDate && m.departDate && today >= m.arriveDate && today <= m.departDate);
+        const arrivingSoon = guests.filter(m => m.arriveDate && today < m.arriveDate).sort((a, b) => a.arriveDate!.localeCompare(b.arriveDate!));
+        const alreadyLeft  = guests.filter(m => m.departDate && today > m.departDate).sort((a, b) => b.departDate!.localeCompare(a.departDate!));
+        const noPlans      = guests.filter(m => !m.arriveDate).sort((a, b) => a.name.localeCompare(b.name));
+        const staff        = members.filter(m => m.role === 'staff').sort((a, b) => a.name.localeCompare(b.name));
 
         const renderCard = (m: FamilyMember) => (
           <MemberCard
@@ -1924,6 +1935,7 @@ export default function FamilyScreen() {
             {renderSection('Arriving soon', arrivingSoon)}
             {renderSection('Already left', alreadyLeft)}
             {renderSection('No plans yet', noPlans)}
+            {renderSection('Staff 🎩', staff)}
           </>
         );
       })()}

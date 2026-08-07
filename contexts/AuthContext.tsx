@@ -17,6 +17,7 @@ export type User = {
   status: 'pending' | 'approved';
   isAdmin: boolean;
   isOwner?: boolean;
+  role?: 'guest' | 'staff' | 'admin';
   avatar?: string | null;
 };
 

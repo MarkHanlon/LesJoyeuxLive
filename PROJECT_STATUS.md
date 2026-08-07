@@ -186,6 +186,13 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 ### Meal summary surfaces "keep a plate" (2026-07-28)
 - [x] The Family-tab "🥗 N for lunch / 🍽 N for dinner" summary now appends **"(N keeping a plate)"** when any of those counted are `keep` status (arriving after the sitting but wanting a plate saved). The headline count still includes keeps (unchanged); this just breaks out how many are keeps. `TonightSummaryCard` in `admin.tsx`; layout only.
 
+### Staff permissions — Stage 2: no visit, no edits, Staff section (2026-07-28)
+- [x] **Client learns its own role** — `role` added to the `User` type (`AuthContext`) and to the `GET /api/status/:id` + `POST /api/register` responses (login SELECT + register RETURNING now include `COALESCE(role,'guest')`).
+- [x] **Staff self-edits blocked server-side** — new `callerIsStaff()` helper; `POST /api/visit/:id`, `PATCH /api/visit/drink/:id`, `PATCH /api/visit/skip/:id` return 403 for staff. Avatar (`PATCH /api/user/:id`) stays allowed.
+- [x] **My Visit → staff profile** — for `role === 'staff'`, `visit.tsx` renders a minimal photo-only profile ("Staff · always here 🎩", tap photo to change); the tab is titled **"Me"** with a 🎩 icon (`_layout.tsx`). Guests unchanged.
+- [x] **Family tab "Staff" section** — staff excluded from the guest date-groups and shown under a **"Staff 🎩"** section; `MemberCard` renders a minimal staff variant ("Always here 🎩", no visit/transport/room/drink rows, no Dates row in Manage; role chips + remove kept). `MemberDetailModal` shows a minimal staff view.
+- [x] **Data hygiene** — setting a member to `staff` (`PATCH /api/admin/role/:id`) now deletes their `room_allocations` + `visits` rows; seeded staff fixtures (Marie, Olivier) are created with no visit row. Staff therefore carry no visit → the bell (present-today) already skips them. No migration.
+
 ### Staff permissions — Stage 1: exclusions (2026-07-28)
 - [x] Staff are now excluded from everywhere they were wrongly appearing as catered guests/occupants: the **apéritif tally + "N here tonight"** (`hereTonight`), the **apéritif printout** (`presentOn`), the **rooms timeline** (`roomTimeline`) and the **printed room schedule** (`printRoomAllocation`), and the **home news feed** (`buildNewsItems` now filters `role !== 'staff'`; `Member` type gained `role`). (Lunch/dinner counts `nonStaff` and the meals grid `guests` already excluded staff.) All key off the `role` already returned by `/api/family/members`; no migration. **Stage 2 to follow:** expose `role` on the client `User`, hide My Visit / add a staff photo-only profile, block staff self-edit APIs, a Family-tab "Staff" section with "always here" cards, and clear stale visit/room data on role change.
 

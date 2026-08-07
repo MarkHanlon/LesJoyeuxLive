@@ -41,9 +41,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="visit"
         options={{
-          title: 'My Visit',
+          title: user?.role === 'staff' ? 'Me' : 'My Visit',
           tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 16, color }}>🗓️</Text>
+            <Text style={{ fontSize: 16, color }}>{user?.role === 'staff' ? '🎩' : '🗓️'}</Text>
           ),
         }}
       />

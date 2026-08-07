@@ -523,6 +523,38 @@ export default function VisitScreen() {
     );
   }
 
+  // Staff have no visit to plan — a minimal profile screen (photo + "always here").
+  if (user?.role === 'staff') {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.fleur}>⚜</Text>
+          <View style={styles.headerRow}>
+            <TouchableOpacity onPress={pickAvatar} activeOpacity={0.75} style={styles.avatarBtn} disabled={uploadingAvatar}>
+              {avatarUri
+                ? <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
+                : <View style={[styles.avatarCircle, { backgroundColor: user ? avatarColor(user.name) : '#C8973D' }]}>
+                    {uploadingAvatar
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={styles.avatarInitials}>{user ? initials(user.name) : '?'}</Text>}
+                  </View>}
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headline}>{user?.name}</Text>
+              <Text style={styles.subline}>Staff · always here 🎩</Text>
+            </View>
+          </View>
+        </View>
+        <View style={styles.staffCard}>
+          <Text style={styles.staffCardText}>
+            You're part of the château team, so there's no visit to plan — you're counted as
+            always here. Tap your photo above to change it.
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
+
   const showForm = isEditing || !saved;
 
   return (
@@ -995,6 +1027,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
   },
+  staffCard: { margin: 20, padding: 18, borderRadius: 16, backgroundColor: '#EEF4F8', borderWidth: 1, borderColor: '#A8C8E8' },
+  staffCardText: { fontSize: 15, lineHeight: 22, color: '#3A6B8A', fontFamily: 'Raleway, system-ui, sans-serif' },
   avatarBtn: { marginRight: 14, flexShrink: 0 },
   avatarCircle: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
   avatarImg: { width: 52, height: 52, borderRadius: 26 },

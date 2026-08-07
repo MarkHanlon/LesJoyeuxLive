@@ -41,6 +41,16 @@ async function callerIsOwner(db: any, userId?: string | null): Promise<boolean> 
   }
 }
 
+// Staff are "always here" workers with no visit to plan — they may not edit
+// visit/drink/skip data. Self-service write endpoints call this to reject them.
+async function callerIsStaff(db: any, userId?: string | null): Promise<boolean> {
+  if (!userId) return false;
+  try {
+    const [u] = await db`SELECT role FROM users WHERE id = ${userId}`;
+    return u?.role === 'staff';
+  } catch { return false; }
+}
+
 async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const buf = (await scryptAsync(pin, salt, 64)) as Buffer;
@@ -81,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const db = getDb();
       const trimmedName = name.trim();
       const existing = await db`
-        SELECT id, name, status, is_admin AS "isAdmin", pin_hash
+        SELECT id, name, status, is_admin AS "isAdmin", COALESCE(role, 'guest') AS role, pin_hash
         FROM users WHERE LOWER(name) = LOWER(${trimmedName})
         LIMIT 1
       `;
@@ -109,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(401).json({ error: 'Wrong PIN for this name' });
         }
         await db`UPDATE users SET failed_pin_attempts = 0, pin_locked_until = NULL WHERE id = ${u.id}`.catch(() => {});
-        return res.status(200).json({ id: u.id, name: u.name, status: u.status, isAdmin: u.isAdmin, isOwner: await callerIsOwner(db, u.id) });
+        return res.status(200).json({ id: u.id, name: u.name, status: u.status, isAdmin: u.isAdmin, role: u.role, isOwner: await callerIsOwner(db, u.id) });
       }
       const [{ count }] = await db`SELECT COUNT(*) AS count FROM users`;
       const isFirst = Number(count) === 0;
@@ -117,7 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const [user] = await db`
         INSERT INTO users (name, pin_hash, status, is_admin)
         VALUES (${trimmedName}, ${pinHash}, ${isFirst ? 'approved' : 'pending'}, ${isFirst})
-        RETURNING id, name, status, is_admin AS "isAdmin", created_at AS "createdAt"
+        RETURNING id, name, status, is_admin AS "isAdmin", COALESCE(role, 'guest') AS role, created_at AS "createdAt"
       `;
       if (user.status === 'pending') {
         await sendPushToAdmins(db, {
@@ -283,6 +293,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ...rows[0], allocations, ...skips });
       }
       if (method === 'POST') {
+        if (await callerIsStaff(db, callerId)) return res.status(403).json({ error: 'Staff have no visit to edit' });
         const { arriveDate, arriveSlot, saveLunch, saveDinner, departDate, departSlot, aperitif,
                 pickupNeeded, pickupTime, pickupFrom, dropoffNeeded, dropoffTime, dropoffTo,
                 status } = req.body ?? {};
@@ -347,6 +358,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (typeof aperitif !== 'string' || !VALID_DRINKS.has(aperitif))
         return res.status(400).json({ error: 'aperitif required' });
       const db = getDb();
+      if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff have no apéritif to set' });
       if (tonight) {
         await db`
           UPDATE visits
@@ -378,6 +390,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Invalid meal' });
       const on = !!skip;
       const db = getDb();
+      if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff have no meals to skip' });
       if (meal === 'lunch') {
         await db`UPDATE visits SET skip_lunch_date = CASE WHEN ${on} THEN CURRENT_DATE ELSE NULL END WHERE user_id = ${seg2}`;
       } else if (meal === 'dinner') {
@@ -395,7 +408,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!requesterId || requesterId !== seg1) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
       const [user] = await db`
-        SELECT id, name, status, is_admin AS "isAdmin", avatar
+        SELECT id, name, status, is_admin AS "isAdmin", COALESCE(role, 'guest') AS role, avatar
         FROM   users
         WHERE  id = ${seg1}
       `;
@@ -481,6 +494,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             is_admin = ${role === 'admin'}
         WHERE id = ${seg2}
       `;
+      // Staff are "always here" with no visit — clear any stale guest data so it
+      // doesn't linger in views. Guarded so a pre-migration DB can't break the change.
+      if (role === 'staff') {
+        try { await db`DELETE FROM room_allocations WHERE user_id = ${seg2}`; } catch {}
+        try { await db`DELETE FROM visits WHERE user_id = ${seg2}`; } catch {}
+      }
       return res.status(200).json({ ok: true });
     }
 
@@ -897,6 +916,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             RETURNING id
           `;
           if (!newUser) continue;
+          // Staff are "always here" — no visit row.
+          if (f.role === 'staff') { created++; continue; }
           const arriveDate = addD(today, f.arriveOffset);
           const departDate = addD(today, f.departOffset);
           await db`
