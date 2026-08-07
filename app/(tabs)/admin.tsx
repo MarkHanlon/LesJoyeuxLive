@@ -727,6 +727,9 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   const nonStaff = members.filter(m => m.role !== 'staff');
   const lunchCount  = nonStaff.filter(m => getLunchStatus(m, today) !== 'no').length;
   const dinnerCount = nonStaff.filter(m => getDinnerStatus(m, today) !== 'no').length;
+  const lunchKeep   = nonStaff.filter(m => getLunchStatus(m, today) === 'keep').length;
+  const dinnerKeep  = nonStaff.filter(m => getDinnerStatus(m, today) === 'keep').length;
+  const keepNote = (n: number) => (n > 0 ? ` (${n} keeping a plate)` : '');
 
   const counts: Record<string, number> = {};
   for (const m of hereTonight) {
@@ -741,10 +744,10 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
       <View style={styles.dinnerRow}>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.dinnerRowText}>
-            {'🥗 '}{lunchCount === 0 ? 'Nobody for lunch today' : `${lunchCount} ${lunchCount === 1 ? 'person' : 'people'} for lunch today`}
+            {'🥗 '}{lunchCount === 0 ? 'Nobody for lunch today' : `${lunchCount} ${lunchCount === 1 ? 'person' : 'people'} for lunch today${keepNote(lunchKeep)}`}
           </Text>
           <Text style={styles.dinnerRowText}>
-            {'🍽 '}{dinnerCount === 0 ? 'Nobody for dinner tonight' : `${dinnerCount} ${dinnerCount === 1 ? 'person' : 'people'} for dinner tonight`}
+            {'🍽 '}{dinnerCount === 0 ? 'Nobody for dinner tonight' : `${dinnerCount} ${dinnerCount === 1 ? 'person' : 'people'} for dinner tonight${keepNote(dinnerKeep)}`}
           </Text>
         </View>
         {Platform.OS === 'web' && (
