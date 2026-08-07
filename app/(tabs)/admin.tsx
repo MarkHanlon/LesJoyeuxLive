@@ -116,6 +116,7 @@ type FamilyMember = {
   skipLunchToday?: boolean | null;
   skipDinnerToday?: boolean | null;
   skipAperitifToday?: boolean | null;
+  hasPush?: boolean | null; // has ≥1 push subscription (admins only, for Manage mode)
   avatar?: string | null;
   pickupNeeded?: boolean | null;
   pickupTime?: string | null;
@@ -874,6 +875,11 @@ function MemberCard({
               <View style={[styles.roleBadge, { backgroundColor: roleConf.bg, borderColor: roleConf.border }]}>
                 <Text style={[styles.roleBadgeText, { color: roleConf.text }]}>{roleConf.label}</Text>
               </View>
+            )}
+            {managing && (
+              <Text style={[styles.pushBadge, !member.hasPush && styles.pushBadgeOff]}>
+                {member.hasPush ? '🔔' : '🔕'}
+              </Text>
             )}
           </View>
 
@@ -2598,6 +2604,8 @@ const styles = StyleSheet.create({
   adminBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245', letterSpacing: 0.5 },
   roleBadge: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
   roleBadgeText: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', letterSpacing: 0.5 },
+  pushBadge: { fontSize: 13 },              // 🔔 has notifications
+  pushBadgeOff: { opacity: 0.4 },            // 🔕 muted = none
   roleRow: { flexDirection: 'row', gap: 8 },
   roleChip: { flex: 1, paddingVertical: 8, borderRadius: 50, borderWidth: 1.5, borderColor: '#EDD9A3', backgroundColor: '#FAF4E6', alignItems: 'center' },
   roleChipText: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#B8956A', letterSpacing: 0.3 },

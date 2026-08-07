@@ -3,7 +3,7 @@ import { scrypt, randomBytes, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
 import webpush from 'web-push';
 import { getDb } from './_db';
-import { sendPushToAdmins, sendPushToAll } from './push/_send';
+import { sendPushToAdmins, sendPushToAll, sendPushToPresent } from './push/_send';
 import { VALID_ROOM_KEYS } from '../constants/rooms';
 
 const scryptAsync = promisify(scrypt);
@@ -135,7 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const userId = req.headers['x-user-id'] as string | undefined;
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       const db = getDb();
-      const [caller] = await db`SELECT id FROM users WHERE id = ${userId} AND status = 'approved'`;
+      const [caller] = await db`SELECT id, is_admin AS "isAdmin" FROM users WHERE id = ${userId} AND status = 'approved'`;
       if (!caller) return res.status(403).json({ error: 'Forbidden' });
       const members = await db`
         SELECT
@@ -207,6 +207,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           skipAperitifToday: !!s?.skipAperitifToday,
         };
       });
+      // Admins-only: mark who has push notifications enabled (≥1 subscription), so
+      // Manage mode can show a 🔔/🔕 indicator. Kept off the payload for non-admins.
+      let finalMembers = withSkips;
+      if (caller.isAdmin) {
+        let pushSet = new Set<string>();
+        try {
+          const rows = await db`SELECT DISTINCT user_id AS "userId" FROM push_subscriptions`;
+          pushSet = new Set(rows.map((r: any) => r.userId));
+        } catch { /* push_subscriptions absent — leave everyone as no-push */ }
+        finalMembers = withSkips.map((m: any) => ({ ...m, hasPush: pushSet.has(m.id) }));
+      }
       // Annotate who is a site owner — but only reveal it to owners (keeps owner
       // identity from leaking). Resilient to the column not existing pre-migration.
       if (await callerIsOwner(db, userId)) {
@@ -215,9 +226,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const rows = await db`SELECT id FROM users WHERE is_owner = true`;
           ownerIds = new Set(rows.map((r: any) => r.id));
         } catch { /* is_owner not migrated yet */ }
-        return res.status(200).json(withSkips.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
+        return res.status(200).json(finalMembers.map((m: any) => ({ ...m, isOwner: ownerIds.has(m.id) })));
       }
-      return res.status(200).json(withSkips);
+      return res.status(200).json(finalMembers);
     }
 
     // GET|POST /api/visit/:id
@@ -746,7 +757,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'title required' });
         const titleVal = title.slice(0, 100);
         const bodyVal  = (typeof body === 'string' ? body : '').slice(0, 200);
-        await sendPushToAll(bellDb, { title: titleVal, body: bodyVal, url: '/' });
+        await sendPushToPresent(bellDb, { title: titleVal, body: bodyVal, url: '/' });
         const [bell] = await bellDb`INSERT INTO bells (sent_by, title, body) VALUES (${bellUserId}, ${titleVal}, ${bodyVal}) RETURNING sent_at`;
         return res.status(200).json({ ok: true, sentAt: bell.sent_at });
       }

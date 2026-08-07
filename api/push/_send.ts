@@ -60,3 +60,23 @@ export async function sendPushToAll(
   `;
   await sendToSubscriptions(db, subs as any, payload);
 }
+
+// People physically at the château today (a "coming" visit whose dates include
+// today) — used for the meal/apéritif bell so folks at home aren't pinged.
+export async function sendPushToPresent(
+  db: NeonQueryFunction<false, false>,
+  payload: Payload
+): Promise<void> {
+  if (!initWebPush()) return;
+  const subs = await db`
+    SELECT ps.endpoint, ps.p256dh, ps.auth
+    FROM push_subscriptions ps
+    JOIN users u  ON u.id = ps.user_id
+    JOIN visits v ON v.user_id = u.id
+    WHERE u.status = 'approved'
+      AND COALESCE(v.status, 'coming') = 'coming'
+      AND v.arrive_date IS NOT NULL AND v.depart_date IS NOT NULL
+      AND v.arrive_date <= CURRENT_DATE AND v.depart_date >= CURRENT_DATE
+  `;
+  await sendToSubscriptions(db, subs as any, payload);
+}
