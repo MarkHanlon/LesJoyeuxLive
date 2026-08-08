@@ -328,15 +328,9 @@ function printAperitifs(members: FamilyMember[], fromDate: string, toDate: strin
   const days = datesBetween(fromDate, toDate);
   const dObj = (d: string) => new Date(d + 'T12:00:00');
 
-  // Who is here for the apéritif on a given evening (mirrors the Tonight card).
-  const presentOn = (d: string) => members.filter(m => {
-    if (m.role === 'staff') return false; // staff aren't catered for
-    if (!m.arriveDate || !m.departDate) return false;
-    const a = String(m.arriveDate).slice(0, 10), dep = String(m.departDate).slice(0, 10);
-    if (d < a || d > dep) return false;
-    if (d === dep && BEFORE_DINNER_SLOTS.has(m.departSlot ?? '')) return false; // gone before the evening
-    return true;
-  });
+  // Who is at the apéritif on a given evening = people actually AT dinner that day
+  // (status 'yes'); keep-a-plate ('keep') and late/absent arrivals are excluded.
+  const presentOn = (d: string) => members.filter(m => m.role !== 'staff' && getDinnerStatus(m, d) === 'yes');
 
   const todayIso = todayStr();
   const cards = days.map(d => {
@@ -719,13 +713,9 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   const openPrint = (mode: 'meals' | 'aperitifs') => { setPFrom(mealSpan.from); setPTo(mealSpan.to); setPrintMode(mode); };
 
   const today = todayStr();
-  const hereTonight = members.filter(m => {
-    if (m.role === 'staff') return false; // staff aren't catered for
-    if (!m.arriveDate || !m.departDate) return false;
-    if (today < m.arriveDate || today > m.departDate) return false;
-    if (today === String(m.departDate).slice(0, 10) && BEFORE_DINNER_SLOTS.has(m.departSlot ?? '')) return false;
-    return true;
-  });
+  // Apéritif is for people actually AT dinner (status 'yes') — not keep-a-plate ('keep')
+  // or absent/late arrivals. getDinnerStatus already handles dates, slots, skips.
+  const hereTonight = members.filter(m => m.role !== 'staff' && getDinnerStatus(m, today) === 'yes');
 
   const nonStaff = members.filter(m => m.role !== 'staff');
   const lunchCount  = nonStaff.filter(m => getLunchStatus(m, today) !== 'no').length;

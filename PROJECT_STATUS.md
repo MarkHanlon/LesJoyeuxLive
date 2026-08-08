@@ -186,6 +186,9 @@ _Rough ideas captured 2026-07-18; each needs scoping before implementation._
 ### Meal summary surfaces "keep a plate" (2026-07-28)
 - [x] The Family-tab "🥗 N for lunch / 🍽 N for dinner" summary now appends **"(N keeping a plate)"** when any of those counted are `keep` status (arriving after the sitting but wanting a plate saved). The headline count still includes keeps (unchanged); this just breaks out how many are keeps. `TonightSummaryCard` in `admin.tsx`; layout only.
 
+### Apéritif count fix: only dinner attendees (2026-07-28)
+- [x] The apéritif tally/count used date-based presence (`hereTonight`/`presentOn`), so people **arriving after dinner** and **keep-a-plate ("K")** guests were wrongly counted. Both now filter on **`getDinnerStatus(m, date) === 'yes'`** (actual dinner attendance) — `'keep'` and `'no'` are excluded — fixing the Tonight tally, the "N here tonight" subtitle, and the apéritif printout. Staff still excluded; `skipAperitifToday` still honoured. Layout/logic only.
+
 ### Staff permissions — Stage 2: no visit, no edits, Staff section (2026-07-28)
 - [x] **Client learns its own role** — `role` added to the `User` type (`AuthContext`) and to the `GET /api/status/:id` + `POST /api/register` responses (login SELECT + register RETURNING now include `COALESCE(role,'guest')`).
 - [x] **Staff self-edits blocked server-side** — new `callerIsStaff()` helper; `POST /api/visit/:id`, `PATCH /api/visit/drink/:id`, `PATCH /api/visit/skip/:id` return 403 for staff. Avatar (`PATCH /api/user/:id`) stays allowed.
