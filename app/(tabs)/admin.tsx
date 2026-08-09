@@ -338,7 +338,7 @@ function printDinnerGrid(members: FamilyMember[], fromDate: string, toDate: stri
   const rangeLabel = `${dObj(fromDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} – `
     + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
 
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meals — Les Joyeux</title><style>
 @page{size:A4 landscape;margin:8mm}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -426,7 +426,7 @@ function printAperitifs(members: FamilyMember[], fromDate: string, toDate: strin
     + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
   const body = cards || `<p class="none">No one is here for an apéritif in this range.</p>`;
 
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Apéritifs — Les Joyeux</title><style>
 @page{size:A4 portrait;margin:14mm}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -576,7 +576,7 @@ function printRoomAllocation(
     + `${dObj(toDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`;
   const roomsNote = hideEmpty ? `${shownRooms} occupied room${shownRooms === 1 ? '' : 's'}` : `all rooms`;
 
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Room Allocation — Les Joyeux</title><style>
 @page{size:A4 landscape;margin:8mm}
 *{box-sizing:border-box;margin:0;padding:0}
