@@ -33,6 +33,7 @@ function NotificationBanner({ userId }: { userId: string }) {
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [needsInstall, setNeedsInstall] = useState(false);
 
   useEffect(() => {
@@ -53,25 +54,12 @@ function NotificationBanner({ userId }: { userId: string }) {
     }
   }, []);
 
-  if (Platform.OS === 'web' && needsInstall) {
-    return (
-      <View style={bannerStyles.banner}>
-        <Text style={bannerStyles.icon}>📲</Text>
-        <Text style={bannerStyles.text}>
-          To get the dinner bell on iPhone: tap Share, then “Add to Home Screen”, and open the app from there.
-        </Text>
-      </View>
-    );
-  }
-
-  if (Platform.OS !== 'web' || permission === null || subscribed) return null;
-
   async function enable() {
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setNote(null);
     try {
       const result = await Notification.requestPermission();
       setPermission(result);
-      if (result !== 'granted') return;
+      if (result !== 'granted') { setError('Permission not granted'); return; }
       const res = await fetch('/api/push/vapid-key');
       if (!res.ok) throw new Error('Push not configured on server');
       const { publicKey } = await res.json();
@@ -94,15 +82,78 @@ function NotificationBanner({ userId }: { userId: string }) {
     }
   }
 
-  if (permission === 'denied') {
+  async function sendTest() {
+    setBusy(true); setError(null); setNote(null);
+    try {
+      const res = await fetch('/api/push/test-self', {
+        method: 'POST',
+        headers: { 'x-user-id': userId },
+      });
+      const detail = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(detail?.error ? `Test failed: ${detail.error}` : `Test failed (${res.status})`);
+      setNote(detail?.sent ? `Sent to ${detail.sent} device(s) — watch for it` : 'No devices registered for you');
+    } catch (e: any) {
+      setError(e.message ?? 'Test failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Native app — nothing to show.
+  if (Platform.OS !== 'web') return null;
+
+  // iOS Safari tab (Push API absent until installed to Home Screen).
+  if (needsInstall) {
     return (
       <View style={bannerStyles.banner}>
-        <Text style={bannerStyles.icon}>🔕</Text>
-        <Text style={bannerStyles.text}>Notifications blocked — enable in browser settings.</Text>
+        <Text style={bannerStyles.icon}>📲</Text>
+        <Text style={bannerStyles.text}>
+          To get the dinner bell on iPhone: tap Share, then “Add to Home Screen”, and open the app from there.
+        </Text>
       </View>
     );
   }
 
+  // Browser with no Notification API at all.
+  if (permission === null) {
+    return (
+      <View style={bannerStyles.banner}>
+        <Text style={bannerStyles.icon}>🔕</Text>
+        <Text style={bannerStyles.text}>This browser can’t show notifications.</Text>
+      </View>
+    );
+  }
+
+  if (permission === 'denied') {
+    return (
+      <View style={bannerStyles.banner}>
+        <Text style={bannerStyles.icon}>🔕</Text>
+        <Text style={bannerStyles.text}>Notifications blocked — turn them back on in your browser/site settings, then reload.</Text>
+      </View>
+    );
+  }
+
+  // Granted + subscribed → confirm it's on and let them self-test.
+  if (subscribed) {
+    return (
+      <View style={bannerStyles.banner}>
+        <Text style={bannerStyles.icon}>🔔</Text>
+        <View style={bannerStyles.body}>
+          <Text style={bannerStyles.text}>Notifications are on for this device</Text>
+          {note && <Text style={bannerStyles.noteText}>{note}</Text>}
+          {error && <Text style={bannerStyles.errorText}>{error}</Text>}
+        </View>
+        <TouchableOpacity
+          style={[bannerStyles.btnGhost, busy && bannerStyles.btnBusy]}
+          onPress={sendTest} disabled={busy} activeOpacity={0.8}
+        >
+          {busy ? <ActivityIndicator color="#8B6245" size="small" /> : <Text style={bannerStyles.btnGhostText}>Send test</Text>}
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Granted but no subscription yet, or never asked → offer Enable.
   return (
     <View style={bannerStyles.banner}>
       <Text style={bannerStyles.icon}>🔔</Text>
@@ -3009,7 +3060,10 @@ const bannerStyles = StyleSheet.create({
   body: { flex: 1 },
   text: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#5C3D1E', lineHeight: 18 },
   errorText: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C85A2E', marginTop: 2 },
+  noteText: { fontSize: 11, fontFamily: 'Raleway, system-ui, sans-serif', color: '#2D5A3D', marginTop: 2 },
   btn: { backgroundColor: '#C85A2E', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 50, minWidth: 72, alignItems: 'center' },
   btnBusy: { opacity: 0.7 },
   btnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#F5EDD6' },
+  btnGhost: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#C8973D', paddingVertical: 7, paddingHorizontal: 14, borderRadius: 50, minWidth: 72, alignItems: 'center' },
+  btnGhostText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245' },
 });

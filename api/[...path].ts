@@ -693,6 +693,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json({ publicKey: key });
     }
 
+    // POST /api/push/test-self — any user fires a test push to their own devices
+    if (seg0 === 'push' && seg1 === 'test-self' && !seg2) {
+      if (method !== 'POST') return res.status(405).end();
+      const selfId = req.headers['x-user-id'] as string | undefined;
+      if (!selfId) return res.status(401).json({ error: 'Unauthorized' });
+      const subject = process.env.VAPID_SUBJECT;
+      const publicKey = process.env.VAPID_PUBLIC_KEY;
+      const privateKey = process.env.VAPID_PRIVATE_KEY;
+      if (!subject || !publicKey || !privateKey) {
+        return res.status(503).json({ error: 'Push not configured on server' });
+      }
+      webpush.setVapidDetails(subject, publicKey, privateKey);
+      const db = getDb();
+      const subs = await db`
+        SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ${selfId}
+      `;
+      if (subs.length === 0) return res.status(200).json({ sent: 0 });
+      let sent = 0;
+      await Promise.allSettled(
+        subs.map(async (sub) => {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              JSON.stringify({ title: 'Test 🔔', body: 'Your notifications are working!', url: '/' })
+            );
+            sent++;
+          } catch (err: any) {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              await db`DELETE FROM push_subscriptions WHERE endpoint = ${sub.endpoint}`;
+            }
+          }
+        })
+      );
+      return res.status(200).json({ sent });
+    }
+
     // POST /api/push/test
     if (seg0 === 'push' && seg1 === 'test' && !seg2) {
       if (method !== 'POST') return res.status(405).end();
