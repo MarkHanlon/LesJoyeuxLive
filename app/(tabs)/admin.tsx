@@ -222,6 +222,8 @@ type FamilyMember = {
   skipLunchToday?: boolean | null;
   skipDinnerToday?: boolean | null;
   skipAperitifToday?: boolean | null;
+  coffeeToday?: number | null;   // after-dinner hot drinks ordered for today
+  teaToday?: number | null;
   hasPush?: boolean | null; // has ≥1 push subscription (admins only, for Manage mode)
   avatar?: string | null;
   pickupNeeded?: boolean | null;
@@ -838,6 +840,14 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   }
   const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
 
+  // After-dinner hot drinks (today-scoped counts; anyone who has ordered shows here).
+  const firstNameOf = (n: string) => n.trim().split(/\s+/)[0];
+  const hotDrinkers = members
+    .filter(m => (m.coffeeToday ?? 0) > 0 || (m.teaToday ?? 0) > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const totalCoffee = members.reduce((n, m) => n + (m.coffeeToday ?? 0), 0);
+  const totalTea    = members.reduce((n, m) => n + (m.teaToday ?? 0), 0);
+
   return (
     <>
       <View style={styles.dinnerRow}>
@@ -883,6 +893,31 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
                 </View>
               );
             })}
+          </View>
+        )}
+      </View>
+
+      <View style={[styles.summaryCard, { marginTop: 4 }]}>
+        <View style={styles.summaryCardTitleRow}>
+          <Text style={styles.summaryCardTitle}>☕ After-dinner drinks</Text>
+        </View>
+        <Text style={styles.summaryCardSub}>
+          {totalCoffee === 0 && totalTea === 0
+            ? 'No coffees or teas ordered yet'
+            : `${totalCoffee} coffee${totalCoffee === 1 ? '' : 's'} · ${totalTea} tea${totalTea === 1 ? '' : 's'}`}
+        </Text>
+        {hotDrinkers.length > 0 && (
+          <View style={styles.summaryCardRows}>
+            {hotDrinkers.map(m => (
+              <View key={m.id} style={styles.summaryCardRow}>
+                <Text style={styles.summaryCardLabel}>{firstNameOf(m.name)}</Text>
+                <Text style={styles.hotDrinkCounts}>
+                  {(m.coffeeToday ?? 0) > 0 ? `☕×${m.coffeeToday}` : ''}
+                  {(m.coffeeToday ?? 0) > 0 && (m.teaToday ?? 0) > 0 ? '   ' : ''}
+                  {(m.teaToday ?? 0) > 0 ? `🍵×${m.teaToday}` : ''}
+                </Text>
+              </View>
+            ))}
           </View>
         )}
       </View>
@@ -2767,6 +2802,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 3,
   },
   summaryCardBadgeText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF' },
+  hotDrinkCounts: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#5C3D1E' },
   drinkBadgeWrap: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 6 },
   drinkBadge: { fontSize: 22 },
   drinkBadgeLabel: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245' },

@@ -100,6 +100,8 @@ type VisitPlan = {
   skipLunchToday: boolean;    // today-scoped per-meal opt-outs
   skipDinnerToday: boolean;
   skipAperitifToday: boolean;
+  coffeeToday: number;        // after-dinner hot drinks ordered for tonight
+  teaToday: number;
 };
 
 function todayStr(): string {
@@ -130,7 +132,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, coffeeToday: 0, teaToday: 0 };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -321,6 +323,7 @@ export default function VisitScreen() {
   const [isSavingDrink, setIsSavingDrink] = useState(false);
   const [drinkPickerOpen, setDrinkPickerOpen] = useState(false);
   const [skippingMeal, setSkippingMeal] = useState<null | 'lunch' | 'dinner' | 'aperitif'>(null);
+  const [savingDrinks, setSavingDrinks] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -377,6 +380,8 @@ export default function VisitScreen() {
           skipLunchToday:    !!d.skipLunchToday,
           skipDinnerToday:   !!d.skipDinnerToday,
           skipAperitifToday: !!d.skipAperitifToday,
+          coffeeToday:       Number(d.coffeeToday ?? 0),
+          teaToday:          Number(d.teaToday ?? 0),
         };
         setSaved(plan);
         setForm(plan);
@@ -387,7 +392,7 @@ export default function VisitScreen() {
   }, [user]);
 
   // Pause auto-refresh while the user is mid-edit so a poll can't wipe unsaved input.
-  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal);
+  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal && !savingDrinks);
 
   // Toggle a today-scoped opt-out ("no lunch/dinner/aperitif today"). Optimistic.
   async function toggleSkip(meal: 'lunch' | 'dinner' | 'aperitif') {
@@ -407,6 +412,30 @@ export default function VisitScreen() {
       setSaved(prev => (prev ? { ...prev, [key]: !next } : prev));
     } finally {
       setSkippingMeal(null);
+    }
+  }
+
+  // Adjust tonight's after-dinner coffee/tea order by ±1. Optimistic; persists both counts.
+  async function adjustDrink(drink: 'coffee' | 'tea', delta: number) {
+    if (!user || !saved || savingDrinks) return;
+    const key = drink === 'coffee' ? 'coffeeToday' : 'teaToday';
+    const next = Math.max(0, Math.min(20, (saved[key] ?? 0) + delta));
+    if (next === saved[key]) return;
+    const prev = saved;
+    const optimistic = { ...saved, [key]: next };
+    setSavingDrinks(true);
+    setSaved(optimistic);
+    try {
+      const res = await fetch(`/api/visit/hotdrinks/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ coffee: optimistic.coffeeToday, tea: optimistic.teaToday }),
+      });
+      if (!res.ok) setSaved(prev); // revert on failure
+    } catch {
+      setSaved(prev);
+    } finally {
+      setSavingDrinks(false);
     }
   }
 
@@ -771,6 +800,38 @@ export default function VisitScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            {/* After-dinner hot drinks — tell staff how many coffees/teas you'd like tonight. */}
+            <Text style={[styles.skipHint, { marginTop: 14 }]}>
+              {isStaying ? 'After-dinner drinks — set how many you’d like tonight.' : 'After-dinner drinks are set while you’re here.'}
+            </Text>
+            {([
+              { drink: 'coffee' as const, label: 'Coffee', icon: '☕', count: saved.coffeeToday },
+              { drink: 'tea' as const,    label: 'Tea',    icon: '🍵', count: saved.teaToday },
+            ]).map(d => (
+              <View key={d.drink} style={styles.drinkStepperRow}>
+                <Text style={styles.drinkStepperLabel}>{d.icon}  {d.label}</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity
+                    style={[styles.stepBtn, (!isStaying || d.count <= 0) && styles.stepBtnDisabled]}
+                    onPress={() => adjustDrink(d.drink, -1)}
+                    disabled={!isStaying || savingDrinks || d.count <= 0}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepCount}>{d.count}</Text>
+                  <TouchableOpacity
+                    style={[styles.stepBtn, !isStaying && styles.stepBtnDisabled]}
+                    onPress={() => adjustDrink(d.drink, +1)}
+                    disabled={!isStaying || savingDrinks}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.stepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
           </View>
 
           <View style={styles.summaryDivider} />
@@ -1157,6 +1218,25 @@ const styles = StyleSheet.create({
   },
   skipPillTextOn: { color: '#F5EDD6' },
   skipPillTextDisabled: { color: '#B8956A' },
+  drinkStepperRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  drinkStepperLabel: {
+    fontSize: 15, color: '#1A1209', fontWeight: '600',
+    fontFamily: 'Raleway, system-ui, sans-serif',
+  },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  stepBtn: {
+    width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: '#C8973D',
+    backgroundColor: '#FFFDF5', alignItems: 'center', justifyContent: 'center',
+  },
+  stepBtnDisabled: { borderColor: '#E7D6A8', backgroundColor: '#F5EDD6', opacity: 0.5 },
+  stepBtnText: { fontSize: 20, fontWeight: '700', color: '#C85A2E', lineHeight: 22 },
+  stepCount: {
+    fontSize: 17, fontWeight: '700', color: '#1A1209', minWidth: 22, textAlign: 'center',
+    fontFamily: 'Raleway, system-ui, sans-serif',
+  },
   summaryDate: {
     fontSize: 22,
     fontFamily: 'Playfair Display, Georgia, serif',
