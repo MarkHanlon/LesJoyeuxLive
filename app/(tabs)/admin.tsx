@@ -33,10 +33,18 @@ function NotificationBanner({ userId }: { userId: string }) {
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsInstall, setNeedsInstall] = useState(false);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    if (typeof Notification === 'undefined') return;
+    if (typeof Notification === 'undefined') {
+      // iOS only exposes web push once the app is added to the Home Screen.
+      const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const isStandalone = typeof window !== 'undefined' &&
+        (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone === true);
+      if (isIOS && !isStandalone) setNeedsInstall(true);
+      return;
+    }
     setPermission(Notification.permission);
     if (Notification.permission === 'granted') {
       navigator.serviceWorker?.ready.then(reg =>
@@ -44,6 +52,17 @@ function NotificationBanner({ userId }: { userId: string }) {
       );
     }
   }, []);
+
+  if (Platform.OS === 'web' && needsInstall) {
+    return (
+      <View style={bannerStyles.banner}>
+        <Text style={bannerStyles.icon}>📲</Text>
+        <Text style={bannerStyles.text}>
+          To get the dinner bell on iPhone: tap Share, then “Add to Home Screen”, and open the app from there.
+        </Text>
+      </View>
+    );
+  }
 
   if (Platform.OS !== 'web' || permission === null || subscribed) return null;
 
@@ -60,10 +79,13 @@ function NotificationBanner({ userId }: { userId: string }) {
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey });
       const saveRes = await fetch('/api/push/subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
         body: JSON.stringify({ userId, subscription: sub.toJSON() }),
       });
-      if (!saveRes.ok) throw new Error('Failed to save subscription');
+      if (!saveRes.ok) {
+        const detail = await saveRes.json().catch(() => null);
+        throw new Error(detail?.error ? `Save failed: ${detail.error}` : `Save failed (${saveRes.status})`);
+      }
       setSubscribed(true);
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong');

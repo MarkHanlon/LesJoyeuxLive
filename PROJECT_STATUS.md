@@ -42,6 +42,7 @@ Working agreements and decisions that aren't obvious from the code. A new sessio
 | _(pending)_ | (visit-status) | My {year} Visit title + not-coming/undecided status | ✅ Pass |
 | _(pending)_ | (rooms) | Room allocation (Rooms sub-tab, admin assign, auto-owner) | 🕐 Not yet tested |
 | _(pending)_ | (notif-banner-all) | Enable-notifications banner shown to all family members (was admin-only); dinner-bell copy | 🕐 Not yet tested |
+| _(pending)_ | (notif-subscribe-fix) | Fix: subscribe POST now sends x-user-id (was 401 for everyone but grandfathered admin); real error surfaced; iOS Add-to-Home-Screen hint | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 
