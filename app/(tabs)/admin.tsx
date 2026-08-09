@@ -36,6 +36,27 @@ function NotificationBanner({ userId }: { userId: string }) {
   const [note, setNote] = useState<string | null>(null);
   const [needsInstall, setNeedsInstall] = useState(false);
 
+  // Re-save the browser's current push subscription to the server (idempotent
+  // upsert). Heals "orphaned" subscriptions created before the subscribe call
+  // sent x-user-id — the browser had a subscription but the DB never stored it,
+  // so sends (and the dinner bell) never reached the device. Returns true if a
+  // subscription existed and was saved.
+  async function syncSubscription(): Promise<boolean> {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) return false;
+      const saveRes = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ userId, subscription: sub.toJSON() }),
+      });
+      return saveRes.ok;
+    } catch {
+      return false;
+    }
+  }
+
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     if (typeof Notification === 'undefined') {
@@ -48,9 +69,13 @@ function NotificationBanner({ userId }: { userId: string }) {
     }
     setPermission(Notification.permission);
     if (Notification.permission === 'granted') {
-      navigator.serviceWorker?.ready.then(reg =>
-        reg.pushManager.getSubscription().then(sub => setSubscribed(!!sub))
-      );
+      navigator.serviceWorker?.ready.then(async reg => {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          setSubscribed(true);
+          syncSubscription(); // heal any device whose subscription never reached the DB
+        }
+      });
     }
   }, []);
 
@@ -85,13 +110,21 @@ function NotificationBanner({ userId }: { userId: string }) {
   async function sendTest() {
     setBusy(true); setError(null); setNote(null);
     try {
-      const res = await fetch('/api/push/test-self', {
-        method: 'POST',
-        headers: { 'x-user-id': userId },
-      });
-      const detail = await res.json().catch(() => null);
+      let res = await fetch('/api/push/test-self', { method: 'POST', headers: { 'x-user-id': userId } });
+      let detail = await res.json().catch(() => null);
+      // Server has no record of this device (orphaned subscription) — re-save it
+      // from the browser and try once more so it works without a reload.
+      if (res.ok && detail?.sent === 0) {
+        const healed = await syncSubscription();
+        if (healed) {
+          res = await fetch('/api/push/test-self', { method: 'POST', headers: { 'x-user-id': userId } });
+          detail = await res.json().catch(() => null);
+        }
+      }
       if (!res.ok) throw new Error(detail?.error ? `Test failed: ${detail.error}` : `Test failed (${res.status})`);
-      setNote(detail?.sent ? `Sent to ${detail.sent} device(s) — watch for it` : 'No devices registered for you');
+      setNote(detail?.sent
+        ? `Sent to ${detail.sent} device(s) — watch for it`
+        : 'No device registered — tap Enable to re-register this phone');
     } catch (e: any) {
       setError(e.message ?? 'Test failed');
     } finally {

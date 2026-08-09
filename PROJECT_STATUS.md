@@ -45,6 +45,7 @@ Working agreements and decisions that aren't obvious from the code. A new sessio
 | _(pending)_ | (notif-subscribe-fix) | Fix: subscribe POST now sends x-user-id (was 401 for everyone but grandfathered admin); real error surfaced; iOS Add-to-Home-Screen hint | 🕐 Not yet tested |
 | _(pending)_ | (notif-visible-status) | Banner now always shows state (on/off/blocked/needs-install) incl. for admin; per-user "Send test" button + POST /api/push/test-self | 🕐 Not yet tested |
 | _(pending)_ | (print-viewport-fix) | Add viewport meta to all 3 print pages (aperitifs/meals/rooms) — fixes tiny text when opened on Samsung/mobile browsers | 🕐 Not yet tested |
+| _(pending)_ | (push-self-heal) | Re-save browser push subscription to server on load + on failed self-test (heals orphaned subs from the 401 era; fixes "No devices registered") | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 
