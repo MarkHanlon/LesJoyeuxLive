@@ -85,7 +85,7 @@ function NotificationBanner({ userId }: { userId: string }) {
     <View style={bannerStyles.banner}>
       <Text style={bannerStyles.icon}>🔔</Text>
       <View style={bannerStyles.body}>
-        <Text style={bannerStyles.text}>Get notified when someone joins</Text>
+        <Text style={bannerStyles.text}>Get notified — hear the dinner bell & news</Text>
         {error && <Text style={bannerStyles.errorText}>{error}</Text>}
       </View>
       <TouchableOpacity
@@ -2484,7 +2484,7 @@ export default function FamilyScreen() {
         </TouchableOpacity>
       </View>
 
-      {activeTab === 'people' && user?.isAdmin && <NotificationBanner userId={user.id} />}
+      {activeTab === 'people' && user && <NotificationBanner userId={user.id} />}
 
       {isLoading ? (
         <View style={styles.centred}>
