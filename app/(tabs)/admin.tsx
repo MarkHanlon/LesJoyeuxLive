@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import { DRINK_ICONS, DRINK_LABELS } from '../../constants/drinks';
+import { DRINK_ICONS, DRINK_LABELS, HOT_DRINKS } from '../../constants/drinks';
 import { ROOMS, roomLabel, allocationsForMember, segmentsOverlap, type Allocation } from '../../constants/rooms';
 import { addDays, datesBetween, daysUntil, endOfWeek, formatDate, formatDateLong, slotLabel, startOfWeek, todayStr } from '../../utils/date';
 import { avatarColor, initials } from '../../utils/ui';
@@ -223,7 +223,10 @@ type FamilyMember = {
   skipDinnerToday?: boolean | null;
   skipAperitifToday?: boolean | null;
   coffeeToday?: number | null;   // after-dinner hot drinks ordered for today
+  decafToday?: number | null;
   teaToday?: number | null;
+  herbalToday?: number | null;
+  peppermintToday?: number | null;
   hasPush?: boolean | null; // has ≥1 push subscription (admins only, for Manage mode)
   avatar?: string | null;
   pickupNeeded?: boolean | null;
@@ -842,11 +845,25 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
 
   // After-dinner hot drinks (today-scoped counts; anyone who has ordered shows here).
   const firstNameOf = (n: string) => n.trim().split(/\s+/)[0];
+  const hotDrinkCount = (m: FamilyMember, field: string) => Number((m as any)[field] ?? 0);
+  const hotDrinkTotal = (m: FamilyMember) => HOT_DRINKS.reduce((n, d) => n + hotDrinkCount(m, d.field), 0);
   const hotDrinkers = members
-    .filter(m => (m.coffeeToday ?? 0) > 0 || (m.teaToday ?? 0) > 0)
+    .filter(m => hotDrinkTotal(m) > 0)
     .sort((a, b) => a.name.localeCompare(b.name));
-  const totalCoffee = members.reduce((n, m) => n + (m.coffeeToday ?? 0), 0);
-  const totalTea    = members.reduce((n, m) => n + (m.teaToday ?? 0), 0);
+  // Per-drink totals across everyone, kept in HOT_DRINKS order.
+  const drinkTotals = HOT_DRINKS.map(d => ({
+    label: d.label,
+    total: members.reduce((n, m) => n + hotDrinkCount(m, d.field), 0),
+  }));
+  const hotDrinkHeadline = drinkTotals
+    .filter(d => d.total > 0)
+    .map(d => `${d.total} ${d.total === 1 ? d.label.toLowerCase() : d.label.toLowerCase() + 's'}`)
+    .join(' · ');
+  // For each person: the drinks they ordered, as words (e.g. "Coffee ×2, Herbal tea ×1").
+  const personDrinks = (m: FamilyMember) => HOT_DRINKS
+    .filter(d => hotDrinkCount(m, d.field) > 0)
+    .map(d => `${d.label} ×${hotDrinkCount(m, d.field)}`)
+    .join(', ');
 
   return (
     <>
@@ -899,23 +916,17 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
 
       <View style={[styles.summaryCard, { marginTop: 4 }]}>
         <View style={styles.summaryCardTitleRow}>
-          <Text style={styles.summaryCardTitle}>☕ After-dinner drinks</Text>
+          <Text style={styles.summaryCardTitle}>After-dinner drinks</Text>
         </View>
         <Text style={styles.summaryCardSub}>
-          {totalCoffee === 0 && totalTea === 0
-            ? 'No coffees or teas ordered yet'
-            : `${totalCoffee} coffee${totalCoffee === 1 ? '' : 's'} · ${totalTea} tea${totalTea === 1 ? '' : 's'}`}
+          {hotDrinkHeadline || 'No hot drinks ordered yet'}
         </Text>
         {hotDrinkers.length > 0 && (
           <View style={styles.summaryCardRows}>
             {hotDrinkers.map(m => (
-              <View key={m.id} style={styles.summaryCardRow}>
-                <Text style={styles.summaryCardLabel}>{firstNameOf(m.name)}</Text>
-                <Text style={styles.hotDrinkCounts}>
-                  {(m.coffeeToday ?? 0) > 0 ? `☕×${m.coffeeToday}` : ''}
-                  {(m.coffeeToday ?? 0) > 0 && (m.teaToday ?? 0) > 0 ? '   ' : ''}
-                  {(m.teaToday ?? 0) > 0 ? `🍵×${m.teaToday}` : ''}
-                </Text>
+              <View key={m.id} style={styles.hotDrinkPersonRow}>
+                <Text style={styles.hotDrinkName}>{firstNameOf(m.name)}</Text>
+                <Text style={styles.hotDrinkCounts}>{personDrinks(m)}</Text>
               </View>
             ))}
           </View>
@@ -2802,7 +2813,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 3,
   },
   summaryCardBadgeText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#FFFFFF' },
-  hotDrinkCounts: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#5C3D1E' },
+  hotDrinkPersonRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  hotDrinkName: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '600', color: '#1A1209', minWidth: 70 },
+  hotDrinkCounts: { flex: 1, textAlign: 'right', fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#5C3D1E' },
   drinkBadgeWrap: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: 6 },
   drinkBadge: { fontSize: 22 },
   drinkBadgeLabel: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245' },

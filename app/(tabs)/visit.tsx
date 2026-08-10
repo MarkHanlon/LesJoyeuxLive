@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { allocationsForMember, roomLabel, type Allocation } from '../../constants/rooms';
+import { HOT_DRINKS, type HotDrinkField } from '../../constants/drinks';
 import { avatarColor, initials } from '../../utils/ui';
 
 const VISIT_REFRESH_MS = 30000;
@@ -101,7 +102,10 @@ type VisitPlan = {
   skipDinnerToday: boolean;
   skipAperitifToday: boolean;
   coffeeToday: number;        // after-dinner hot drinks ordered for tonight
+  decafToday: number;
   teaToday: number;
+  herbalToday: number;
+  peppermintToday: number;
 };
 
 function todayStr(): string {
@@ -132,7 +136,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, coffeeToday: 0, teaToday: 0 };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, coffeeToday: 0, decafToday: 0, teaToday: 0, herbalToday: 0, peppermintToday: 0 };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -381,7 +385,10 @@ export default function VisitScreen() {
           skipDinnerToday:   !!d.skipDinnerToday,
           skipAperitifToday: !!d.skipAperitifToday,
           coffeeToday:       Number(d.coffeeToday ?? 0),
+          decafToday:        Number(d.decafToday ?? 0),
           teaToday:          Number(d.teaToday ?? 0),
+          herbalToday:       Number(d.herbalToday ?? 0),
+          peppermintToday:   Number(d.peppermintToday ?? 0),
         };
         setSaved(plan);
         setForm(plan);
@@ -415,21 +422,24 @@ export default function VisitScreen() {
     }
   }
 
-  // Adjust tonight's after-dinner coffee/tea order by ±1. Optimistic; persists both counts.
-  async function adjustDrink(drink: 'coffee' | 'tea', delta: number) {
+  // Adjust one of tonight's after-dinner hot drinks by ±1. Optimistic; persists
+  // the whole set (the API takes all counts at once).
+  async function adjustDrink(field: HotDrinkField, delta: number) {
     if (!user || !saved || savingDrinks) return;
-    const key = drink === 'coffee' ? 'coffeeToday' : 'teaToday';
-    const next = Math.max(0, Math.min(20, (saved[key] ?? 0) + delta));
-    if (next === saved[key]) return;
+    const current = (saved[field] as number) ?? 0;
+    const next = Math.max(0, Math.min(20, current + delta));
+    if (next === current) return;
     const prev = saved;
-    const optimistic = { ...saved, [key]: next };
+    const optimistic = { ...saved, [field]: next };
     setSavingDrinks(true);
     setSaved(optimistic);
     try {
+      const body: Record<string, number> = {};
+      for (const d of HOT_DRINKS) body[d.key] = (optimistic[d.field] as number) ?? 0;
       const res = await fetch(`/api/visit/hotdrinks/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
-        body: JSON.stringify({ coffee: optimistic.coffeeToday, tea: optimistic.teaToday }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) setSaved(prev); // revert on failure
     } catch {
@@ -801,37 +811,37 @@ export default function VisitScreen() {
               ))}
             </View>
 
-            {/* After-dinner hot drinks — tell staff how many coffees/teas you'd like tonight. */}
+            {/* After-dinner hot drinks — tell staff how many of each you'd like tonight. */}
             <Text style={[styles.skipHint, { marginTop: 14 }]}>
               {isStaying ? 'After-dinner drinks — set how many you’d like tonight.' : 'After-dinner drinks are set while you’re here.'}
             </Text>
-            {([
-              { drink: 'coffee' as const, label: 'Coffee', icon: '☕', count: saved.coffeeToday },
-              { drink: 'tea' as const,    label: 'Tea',    icon: '🍵', count: saved.teaToday },
-            ]).map(d => (
-              <View key={d.drink} style={styles.drinkStepperRow}>
-                <Text style={styles.drinkStepperLabel}>{d.icon}  {d.label}</Text>
-                <View style={styles.stepper}>
-                  <TouchableOpacity
-                    style={[styles.stepBtn, (!isStaying || d.count <= 0) && styles.stepBtnDisabled]}
-                    onPress={() => adjustDrink(d.drink, -1)}
-                    disabled={!isStaying || savingDrinks || d.count <= 0}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.stepCount}>{d.count}</Text>
-                  <TouchableOpacity
-                    style={[styles.stepBtn, !isStaying && styles.stepBtnDisabled]}
-                    onPress={() => adjustDrink(d.drink, +1)}
-                    disabled={!isStaying || savingDrinks}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepBtnText}>+</Text>
-                  </TouchableOpacity>
+            {HOT_DRINKS.map(d => {
+              const count = (saved[d.field] as number) ?? 0;
+              return (
+                <View key={d.key} style={styles.drinkStepperRow}>
+                  <Text style={styles.drinkStepperLabel}>{d.label}</Text>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity
+                      style={[styles.stepBtn, (!isStaying || count <= 0) && styles.stepBtnDisabled]}
+                      onPress={() => adjustDrink(d.field, -1)}
+                      disabled={!isStaying || savingDrinks || count <= 0}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.stepBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.stepCount}>{count}</Text>
+                    <TouchableOpacity
+                      style={[styles.stepBtn, !isStaying && styles.stepBtnDisabled]}
+                      onPress={() => adjustDrink(d.field, +1)}
+                      disabled={!isStaying || savingDrinks}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
 
           <View style={styles.summaryDivider} />

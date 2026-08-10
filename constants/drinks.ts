@@ -17,3 +17,17 @@ export const DRINK_LABELS: Record<string, string> = {
   gin_orange: 'Gin & Orange', cuba_libre: 'Cuba Libre', cuba_libre_zero: 'Cuba Libre (Coke Zero)',
   skinny_bitch: 'Skinny Bitch',
 };
+
+// After-dinner hot drinks. `field` is the count property returned by the API
+// (and stored per-day on the visit); `label` is what's shown to people/staff.
+// Order here is the order shown on My Visit and in the Family tab summary.
+export const HOT_DRINKS = [
+  { key: 'coffee',     field: 'coffeeToday',     label: 'Coffee' },
+  { key: 'decaf',      field: 'decafToday',      label: 'Decaf coffee' },
+  { key: 'tea',        field: 'teaToday',        label: 'Tea' },
+  { key: 'herbal',     field: 'herbalToday',     label: 'Herbal tea' },
+  { key: 'peppermint', field: 'peppermintToday', label: 'Peppermint tea' },
+] as const;
+
+export type HotDrinkKey = typeof HOT_DRINKS[number]['key'];
+export type HotDrinkField = typeof HOT_DRINKS[number]['field'];

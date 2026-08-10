@@ -204,8 +204,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                  (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
                  (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
                  (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN coffee_count ELSE 0 END) AS "coffeeToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN tea_count    ELSE 0 END) AS "teaToday"
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN coffee_count         ELSE 0 END) AS "coffeeToday",
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN decaf_count          ELSE 0 END) AS "decafToday",
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN tea_count            ELSE 0 END) AS "teaToday",
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN herbal_tea_count     ELSE 0 END) AS "herbalToday",
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN peppermint_tea_count ELSE 0 END) AS "peppermintToday"
           FROM visits
         `;
         skipByUser = new Map(skipRows.map((r: any) => [r.userId, r]));
@@ -218,7 +221,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           skipDinnerToday: !!s?.skipDinnerToday,
           skipAperitifToday: !!s?.skipAperitifToday,
           coffeeToday: Number(s?.coffeeToday ?? 0),
+          decafToday: Number(s?.decafToday ?? 0),
           teaToday: Number(s?.teaToday ?? 0),
+          herbalToday: Number(s?.herbalToday ?? 0),
+          peppermintToday: Number(s?.peppermintToday ?? 0),
         };
       });
       // Admins-only: mark who has push notifications enabled (≥1 subscription), so
@@ -284,14 +290,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `;
           allocations = agg?.allocations ?? [];
         } catch { /* room_allocations not migrated yet */ }
-        let skips = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, coffeeToday: 0, teaToday: 0 };
+        let skips = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false,
+                      coffeeToday: 0, decafToday: 0, teaToday: 0, herbalToday: 0, peppermintToday: 0 };
         try {
           const [s] = await db`
             SELECT (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
                    (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
                    (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN coffee_count ELSE 0 END) AS "coffeeToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN tea_count    ELSE 0 END) AS "teaToday"
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN coffee_count         ELSE 0 END) AS "coffeeToday",
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN decaf_count          ELSE 0 END) AS "decafToday",
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN tea_count            ELSE 0 END) AS "teaToday",
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN herbal_tea_count     ELSE 0 END) AS "herbalToday",
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN peppermint_tea_count ELSE 0 END) AS "peppermintToday"
             FROM visits WHERE user_id = ${id} LIMIT 1
           `;
           if (s) skips = {
@@ -299,7 +309,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             skipDinnerToday: !!s.skipDinnerToday,
             skipAperitifToday: !!s.skipAperitifToday,
             coffeeToday: Number(s.coffeeToday ?? 0),
+            decafToday: Number(s.decafToday ?? 0),
             teaToday: Number(s.teaToday ?? 0),
+            herbalToday: Number(s.herbalToday ?? 0),
+            peppermintToday: Number(s.peppermintToday ?? 0),
           };
         } catch { /* skip_* / hotdrink columns not migrated yet */ }
         return res.status(200).json({ ...rows[0], allocations, ...skips });
@@ -413,26 +426,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, meal, skip: on });
     }
 
-    // PATCH /api/visit/hotdrinks/:id — after-dinner coffee/tea order for today
-    // (self-only). { coffee, tea } as non-negative counts. Stamps hotdrink_date to
-    // today so it auto-resets tomorrow; clears the date when both are zero.
+    // PATCH /api/visit/hotdrinks/:id — after-dinner hot-drinks order for today
+    // (self-only). { coffee, decaf, tea, herbal, peppermint } as non-negative
+    // counts. Stamps hotdrink_date to today so it auto-resets tomorrow; clears the
+    // date when every count is zero.
     if (seg0 === 'visit' && seg1 === 'hotdrinks' && seg2) {
       if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
       const userId = req.headers['x-user-id'] as string | undefined;
       if (!userId || userId !== seg2) return res.status(401).json({ error: 'Unauthorized' });
       const clamp = (v: any) => Math.max(0, Math.min(20, Math.floor(Number(v) || 0)));
-      const coffee = clamp((req.body ?? {}).coffee);
-      const tea = clamp((req.body ?? {}).tea);
+      const b = req.body ?? {};
+      const coffee = clamp(b.coffee);
+      const decaf = clamp(b.decaf);
+      const tea = clamp(b.tea);
+      const herbal = clamp(b.herbal);
+      const peppermint = clamp(b.peppermint);
+      const any = coffee + decaf + tea + herbal + peppermint > 0;
       const db = getDb();
       if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff have no drinks to order' });
       await db`
         UPDATE visits
-        SET coffee_count = ${coffee},
-            tea_count    = ${tea},
-            hotdrink_date = CASE WHEN ${coffee} > 0 OR ${tea} > 0 THEN CURRENT_DATE ELSE NULL END
+        SET coffee_count         = ${coffee},
+            decaf_count          = ${decaf},
+            tea_count            = ${tea},
+            herbal_tea_count     = ${herbal},
+            peppermint_tea_count = ${peppermint},
+            hotdrink_date = CASE WHEN ${any} THEN CURRENT_DATE ELSE NULL END
         WHERE user_id = ${seg2}
       `;
-      return res.status(200).json({ ok: true, coffee, tea });
+      return res.status(200).json({ ok: true, coffee, decaf, tea, herbal, peppermint });
     }
 
     // GET /api/status/:id  — caller must present their own id; used by AuthContext on startup
@@ -1080,8 +1102,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // After-dinner hot drinks (today-scoped like the skips): counts apply only
       // when hotdrink_date = CURRENT_DATE, so they reset automatically each day.
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS hotdrink_date DATE`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS coffee_count  INT NOT NULL DEFAULT 0`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tea_count     INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS coffee_count     INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS decaf_count      INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tea_count        INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS herbal_tea_count INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS peppermint_tea_count INT NOT NULL DEFAULT 0`;
       // Allow status-only rows (not coming / undecided) with no dates.
       await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;
