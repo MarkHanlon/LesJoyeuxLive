@@ -245,12 +245,19 @@ type FamilyMember = {
 // A placed room-allocation segment on the timeline (one person, one room, a range).
 type RoomSeg = { memberId: string; name: string; avatar?: string | null; start: string; end: string };
 
+type EventPerson = { id: string; name: string };
+type RsvpStatus = 'going' | 'declined' | null;
 type ChateauEvent = {
   id: string;
   eventDate: string;
   title: string;
   eventTime: string | null;
   createdAt: string;
+  going?: EventPerson[];
+  declined?: EventPerson[];
+  goingCount?: number;
+  declinedCount?: number;
+  myStatus?: RsvpStatus;
 };
 
 const ROLE_CONFIG: Record<Role, { label: string; bg: string; border: string; text: string }> = {
@@ -806,6 +813,36 @@ function BellCard({ userId }: { userId: string }) {
         </TouchableOpacity>
       </View>
     </View>
+  );
+}
+
+function EventDetailModal({ event, onClose }: { event: ChateauEvent | null; onClose: () => void }) {
+  const going = event?.going ?? [];
+  const declined = event?.declined ?? [];
+  return (
+    <Modal visible={!!event} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.eventModalBackdrop}>
+        <View style={styles.eventModalCard}>
+          <Text style={styles.eventModalTitle}>{event?.title ?? ''}</Text>
+          <Text style={styles.eventModalDate}>
+            {event ? formatDateLong(event.eventDate) : ''}{event?.eventTime ? ` · ${event.eventTime}` : ''}
+          </Text>
+          <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ paddingVertical: 4 }}>
+            <Text style={styles.eventModalSection}>✅ Going ({going.length})</Text>
+            {going.length
+              ? going.map(p => <Text key={p.id} style={styles.eventModalName}>{p.name}</Text>)
+              : <Text style={styles.eventModalEmpty}>No one yet</Text>}
+            <Text style={[styles.eventModalSection, { marginTop: 16 }]}>✋ Can’t make it ({declined.length})</Text>
+            {declined.length
+              ? declined.map(p => <Text key={p.id} style={styles.eventModalName}>{p.name}</Text>)
+              : <Text style={styles.eventModalEmpty}>No one yet</Text>}
+          </ScrollView>
+          <TouchableOpacity style={styles.eventModalClose} onPress={onClose} activeOpacity={0.8}>
+            <Text style={styles.eventModalCloseText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1606,6 +1643,8 @@ export default function FamilyScreen() {
   const [newTime, setNewTime] = useState('');
   const [savingEvent, setSavingEvent] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [rsvpBusyId, setRsvpBusyId] = useState<string | null>(null);
+  const [detailEventId, setDetailEventId] = useState<string | null>(null); // event whose attendee list is open
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
@@ -1968,6 +2007,37 @@ export default function FamilyScreen() {
     }
   }
 
+  // Set (or clear, by re-tapping) the caller's RSVP for an event. Optimistic: update
+  // this event's going/declined lists and counts locally, revert if the request fails.
+  async function setRsvp(eventId: string, status: 'going' | 'declined') {
+    if (!user || rsvpBusyId) return;
+    const me: EventPerson = { id: user.id, name: user.name };
+    const prev = events;
+    const next: RsvpStatus = events.find(e => e.id === eventId)?.myStatus === status ? null : status;
+    const apply = (e: ChateauEvent): ChateauEvent => {
+      if (e.id !== eventId) return e;
+      const going    = (e.going ?? []).filter(p => p.id !== user.id);
+      const declined = (e.declined ?? []).filter(p => p.id !== user.id);
+      if (next === 'going') going.push(me);
+      if (next === 'declined') declined.push(me);
+      return { ...e, going, declined, goingCount: going.length, declinedCount: declined.length, myStatus: next };
+    };
+    setRsvpBusyId(eventId);
+    setEvents(list => list.map(apply));
+    try {
+      const res = await fetch(`/api/events/${eventId}/rsvp`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) setEvents(prev);
+    } catch {
+      setEvents(prev);
+    } finally {
+      setRsvpBusyId(null);
+    }
+  }
+
   const currentMember = members.find(m => m.id === user?.id);
   const canSeeSummary = !!currentMember;
 
@@ -2152,6 +2222,7 @@ export default function FamilyScreen() {
 
   const renderEventsTab = () => {
     const today = todayStr();
+    const isStaffUser = user?.role === 'staff';
     return (
       <ScrollView
         contentContainerStyle={styles.listContent}
@@ -2224,28 +2295,69 @@ export default function FamilyScreen() {
                   </View>
                 ))}
 
-                {dayEvents.map(ev => (
-                  <View key={ev.id} style={[styles.eventRow, isPast && { opacity: 0.55 }]}>
-                    {ev.eventTime ? (
-                      <View style={styles.eventTimeBadge}>
-                        <Text style={styles.eventTimeText}>{ev.eventTime}</Text>
+                {dayEvents.map(ev => {
+                  const goingN = ev.goingCount ?? 0;
+                  const declinedN = ev.declinedCount ?? 0;
+                  return (
+                    <View key={ev.id} style={[styles.eventCard, isPast && { opacity: 0.55 }]}>
+                      <View style={styles.eventRow}>
+                        {ev.eventTime ? (
+                          <View style={styles.eventTimeBadge}>
+                            <Text style={styles.eventTimeText}>{ev.eventTime}</Text>
+                          </View>
+                        ) : null}
+                        <Text style={styles.eventTitle}>{ev.title}</Text>
+                        {user?.isAdmin && (
+                          <TouchableOpacity
+                            onPress={() => deleteEvent(ev.id)}
+                            disabled={deletingEventId === ev.id}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            {deletingEventId === ev.id
+                              ? <ActivityIndicator size="small" color="#C85A2E" />
+                              : <Text style={styles.eventDeleteBtn}>✕</Text>
+                            }
+                          </TouchableOpacity>
+                        )}
                       </View>
-                    ) : null}
-                    <Text style={styles.eventTitle}>{ev.title}</Text>
-                    {user?.isAdmin && (
-                      <TouchableOpacity
-                        onPress={() => deleteEvent(ev.id)}
-                        disabled={deletingEventId === ev.id}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        {deletingEventId === ev.id
-                          ? <ActivityIndicator size="small" color="#C85A2E" />
-                          : <Text style={styles.eventDeleteBtn}>✕</Text>
-                        }
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
+
+                      <View style={styles.rsvpRow}>
+                        {!isStaffUser && (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.rsvpBtn, ev.myStatus === 'going' && styles.rsvpBtnGoing]}
+                              onPress={() => setRsvp(ev.id, 'going')}
+                              disabled={rsvpBusyId === ev.id}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.rsvpBtnText, ev.myStatus === 'going' && styles.rsvpBtnTextOn]}>
+                                {ev.myStatus === 'going' ? '✓ Going' : 'Going'}
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.rsvpBtn, ev.myStatus === 'declined' && styles.rsvpBtnDeclined]}
+                              onPress={() => setRsvp(ev.id, 'declined')}
+                              disabled={rsvpBusyId === ev.id}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.rsvpBtnText, ev.myStatus === 'declined' && styles.rsvpBtnTextOn]}>
+                                {ev.myStatus === 'declined' ? "✓ Can't make it" : "Can't make it"}
+                              </Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                        <TouchableOpacity
+                          style={styles.rsvpCountBtn}
+                          onPress={() => setDetailEventId(ev.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.rsvpCountText}>✅ {goingN} · ✋ {declinedN}</Text>
+                          <Text style={styles.rsvpCountHint}>who?</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
 
                 {dayEvents.length === 0 && arrivals.length === 0 && departures.length === 0 && !isAddingHere && (
                   <Text style={[styles.eventNone, isPast && { opacity: 0.45 }]}>Nothing planned</Text>
@@ -2702,6 +2814,10 @@ export default function FamilyScreen() {
         onSave={(a, d) => { if (datesForMember) changeVisitDates(datesForMember.id, a, d); }}
         onClose={() => setDatesForMember(null)}
       />
+      <EventDetailModal
+        event={events.find(e => e.id === detailEventId) ?? null}
+        onClose={() => setDetailEventId(null)}
+      />
     </View>
   );
 }
@@ -2901,6 +3017,28 @@ const styles = StyleSheet.create({
   eventTimeText: { fontSize: 12, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245' },
   eventTitle: { flex: 1, fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#1A1209' },
   eventDeleteBtn: { fontSize: 14, color: '#C8973D', paddingHorizontal: 4 },
+  eventCard: { backgroundColor: '#FFFDF5', borderRadius: 10, marginBottom: 8, overflow: 'hidden' },
+  rsvpRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  rsvpBtn: {
+    paddingVertical: 7, paddingHorizontal: 14, borderRadius: 50,
+    borderWidth: 1.5, borderColor: '#C8973D', backgroundColor: '#FFFDF5',
+  },
+  rsvpBtnGoing: { backgroundColor: '#2D5A3D', borderColor: '#2D5A3D' },
+  rsvpBtnDeclined: { backgroundColor: '#C85A2E', borderColor: '#C85A2E' },
+  rsvpBtnText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#8B6245' },
+  rsvpBtnTextOn: { color: '#F5EDD6' },
+  rsvpCountBtn: { marginLeft: 'auto', alignItems: 'flex-end' },
+  rsvpCountText: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#5C3D1E' },
+  rsvpCountHint: { fontSize: 10, fontFamily: 'Raleway, system-ui, sans-serif', color: '#C8973D', textDecorationLine: 'underline' },
+  eventModalBackdrop: { flex: 1, backgroundColor: 'rgba(26,18,9,0.45)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  eventModalCard: { width: '100%', maxWidth: 420, backgroundColor: '#FFFDF5', borderRadius: 16, padding: 22 },
+  eventModalTitle: { fontSize: 20, fontFamily: 'Playfair Display, Georgia, serif', fontWeight: '700', color: '#1A1209' },
+  eventModalDate: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', color: '#8B6245', marginTop: 2, marginBottom: 12 },
+  eventModalSection: { fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#5C3D1E', marginBottom: 4 },
+  eventModalName: { fontSize: 15, fontFamily: 'Raleway, system-ui, sans-serif', color: '#1A1209', paddingVertical: 3 },
+  eventModalEmpty: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', color: '#B8956A', fontStyle: 'italic', paddingVertical: 3 },
+  eventModalClose: { marginTop: 16, alignSelf: 'center', backgroundColor: '#2D5A3D', borderRadius: 50, paddingVertical: 9, paddingHorizontal: 28 },
+  eventModalCloseText: { fontSize: 14, fontFamily: 'Raleway, system-ui, sans-serif', fontWeight: '700', color: '#F5EDD6' },
   eventNone: {
     paddingHorizontal: 16, paddingVertical: 12,
     fontSize: 13, fontFamily: 'Raleway, system-ui, sans-serif',

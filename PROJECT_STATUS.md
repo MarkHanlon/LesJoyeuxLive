@@ -48,6 +48,7 @@ Working agreements and decisions that aren't obvious from the code. A new sessio
 | _(pending)_ | (push-self-heal) | Re-save browser push subscription to server on load + on failed self-test (heals orphaned subs from the 401 era; fixes "No devices registered") | 🕐 Not yet tested |
 | _(pending)_ | (hot-drinks) | After-dinner coffee/tea order: guests set counts on My Visit (today-scoped, resets daily); staff see totals + who-wants-what in Family tab summary. **Needs Run Migrations** (hotdrink_date/coffee_count/tea_count) | 🕐 Not yet tested |
 | _(pending)_ | (hot-drinks-5) | Hot drinks expanded to coffee/decaf/tea/herbal/peppermint (shared HOT_DRINKS list); summary breakdown now uses words, not icons. **Needs Run Migrations** (decaf_count/herbal_tea_count/peppermint_tea_count) | 🕐 Not yet tested |
+| _(pending)_ | (event-rsvp) | Event sign-up: push to all on event creation; Going / Can't-make-it buttons per event; going/declined counts + tap-to-see-who modal. New event_rsvps table (created inline, no migration needed) | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 

@@ -895,6 +895,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
         `;
+        await db`
+          CREATE TABLE IF NOT EXISTS event_rsvps (
+            event_id   UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            user_id    UUID        NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+            status     TEXT        NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (event_id, user_id)
+          )
+        `;
         const { from, to } = req.query as { from?: string; to?: string };
         if (!from || !to) return res.status(400).json({ error: 'from and to required' });
         const rows = await db`
@@ -903,7 +912,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           WHERE event_date BETWEEN ${from}::date AND ${to}::date
           ORDER BY event_date, event_time NULLS LAST, created_at
         `;
-        return res.json(rows);
+        // Attach RSVPs: who's going / declined per event, in the same date window.
+        const rsvpRows = await db`
+          SELECT r.event_id AS "eventId",
+                 json_agg(json_build_object('id', u.id, 'name', u.name, 'status', r.status)
+                          ORDER BY u.name) AS people
+          FROM event_rsvps r
+          JOIN users  u ON u.id = r.user_id
+          JOIN events e ON e.id = r.event_id
+          WHERE e.event_date BETWEEN ${from}::date AND ${to}::date
+          GROUP BY r.event_id
+        `;
+        const rsvpByEvent = new Map(rsvpRows.map((r: any) => [r.eventId, r.people ?? []]));
+        const withRsvps = rows.map((ev: any) => {
+          const people: any[] = rsvpByEvent.get(ev.id) ?? [];
+          const going    = people.filter(p => p.status === 'going').map(p => ({ id: p.id, name: p.name }));
+          const declined = people.filter(p => p.status === 'declined').map(p => ({ id: p.id, name: p.name }));
+          const mine = people.find(p => p.id === userId);
+          return { ...ev, going, declined, goingCount: going.length, declinedCount: declined.length, myStatus: mine?.status ?? null };
+        });
+        return res.json(withRsvps);
       }
       if (method === 'POST') {
         const adminId = req.headers['x-admin-id'] as string | undefined;
@@ -921,7 +949,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           VALUES (${date}::date, ${titleVal}, ${timeVal}, ${adminId})
           RETURNING id, event_date::text AS "eventDate", title, event_time AS "eventTime", created_at AS "createdAt"
         `;
-        return res.status(201).json(ev);
+        // Let everyone know so they can RSVP. Best-effort — never block the response.
+        try {
+          const when = new Date(String(ev.eventDate) + 'T12:00:00')
+            .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+          await sendPushToAll(db, {
+            title: `📅 New event: ${titleVal}`,
+            body: `${when}${timeVal ? ` at ${timeVal}` : ''} — open the app to say if you’re going.`,
+            url: '/',
+          });
+        } catch { /* push is best-effort */ }
+        return res.status(201).json({ ...ev, going: [], declined: [], goingCount: 0, declinedCount: 0, myStatus: null });
       }
       return res.status(405).end();
     }
@@ -936,6 +974,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!admin) return res.status(403).json({ error: 'Forbidden' });
       await db`DELETE FROM events WHERE id = ${seg1}`;
       return res.status(200).json({ ok: true });
+    }
+
+    // PATCH /api/events/:id/rsvp — the caller says whether they're going.
+    // { status: 'going' | 'declined' | null } (null clears their RSVP). Self-only,
+    // staff-blocked (staff are always here and don't RSVP to family outings).
+    if (seg0 === 'events' && seg1 && seg2 === 'rsvp') {
+      if (method !== 'PATCH') return res.status(405).end();
+      const userId = req.headers['x-user-id'] as string | undefined;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { status } = req.body ?? {};
+      if (status !== 'going' && status !== 'declined' && status !== null)
+        return res.status(400).json({ error: 'Invalid status' });
+      const db = getDb();
+      const [caller] = await db`SELECT id FROM users WHERE id = ${userId} AND status = 'approved'`;
+      if (!caller) return res.status(403).json({ error: 'Forbidden' });
+      if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff are always here' });
+      await db`
+        CREATE TABLE IF NOT EXISTS event_rsvps (
+          event_id   UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          user_id    UUID        NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+          status     TEXT        NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (event_id, user_id)
+        )
+      `;
+      const [ev] = await db`SELECT id FROM events WHERE id = ${seg1}`;
+      if (!ev) return res.status(404).json({ error: 'Event not found' });
+      if (status === null) {
+        await db`DELETE FROM event_rsvps WHERE event_id = ${seg1} AND user_id = ${userId}`;
+      } else {
+        await db`
+          INSERT INTO event_rsvps (event_id, user_id, status)
+          VALUES (${seg1}, ${userId}, ${status})
+          ON CONFLICT (event_id, user_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()
+        `;
+      }
+      return res.status(200).json({ ok: true, status });
     }
 
     // POST|DELETE /api/admin/test-users
@@ -1167,6 +1242,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           sent_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
           title    TEXT        NOT NULL,
           body     TEXT        NOT NULL
+        )
+      `;
+      await db`
+        CREATE TABLE IF NOT EXISTS event_rsvps (
+          event_id   UUID        NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          user_id    UUID        NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+          status     TEXT        NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (event_id, user_id)
         )
       `;
       return res.status(200).json({ ok: true, message: 'Database ready' });
