@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import webpush from 'web-push';
 import { getDb } from './_db';
 import { sendPushToAdmins, sendPushToAll, sendPushToPresent } from './push/_send';
+import { HOT_DRINK_KEYS } from '../constants/drinks';
 import { VALID_ROOM_KEYS } from '../constants/rooms';
 
 const scryptAsync = promisify(scrypt);
@@ -204,11 +205,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                  (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
                  (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
                  (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN coffee_count         ELSE 0 END) AS "coffeeToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN decaf_count          ELSE 0 END) AS "decafToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN tea_count            ELSE 0 END) AS "teaToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN herbal_tea_count     ELSE 0 END) AS "herbalToday",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN peppermint_tea_count ELSE 0 END) AS "peppermintToday"
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN lunch_drink  ELSE NULL END) AS "lunchDrink",
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink"
           FROM visits
         `;
         skipByUser = new Map(skipRows.map((r: any) => [r.userId, r]));
@@ -220,11 +218,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           skipLunchToday: !!s?.skipLunchToday,
           skipDinnerToday: !!s?.skipDinnerToday,
           skipAperitifToday: !!s?.skipAperitifToday,
-          coffeeToday: Number(s?.coffeeToday ?? 0),
-          decafToday: Number(s?.decafToday ?? 0),
-          teaToday: Number(s?.teaToday ?? 0),
-          herbalToday: Number(s?.herbalToday ?? 0),
-          peppermintToday: Number(s?.peppermintToday ?? 0),
+          lunchDrink: s?.lunchDrink ?? null,
+          dinnerDrink: s?.dinnerDrink ?? null,
         };
       });
       // Admins-only: mark who has push notifications enabled (≥1 subscription), so
@@ -290,29 +285,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `;
           allocations = agg?.allocations ?? [];
         } catch { /* room_allocations not migrated yet */ }
-        let skips = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false,
-                      coffeeToday: 0, decafToday: 0, teaToday: 0, herbalToday: 0, peppermintToday: 0 };
+        let skips: any = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false,
+                           lunchDrink: null, dinnerDrink: null };
         try {
           const [s] = await db`
             SELECT (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
                    (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
                    (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN coffee_count         ELSE 0 END) AS "coffeeToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN decaf_count          ELSE 0 END) AS "decafToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN tea_count            ELSE 0 END) AS "teaToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN herbal_tea_count     ELSE 0 END) AS "herbalToday",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN peppermint_tea_count ELSE 0 END) AS "peppermintToday"
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN lunch_drink  ELSE NULL END) AS "lunchDrink",
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink"
             FROM visits WHERE user_id = ${id} LIMIT 1
           `;
           if (s) skips = {
             skipLunchToday: !!s.skipLunchToday,
             skipDinnerToday: !!s.skipDinnerToday,
             skipAperitifToday: !!s.skipAperitifToday,
-            coffeeToday: Number(s.coffeeToday ?? 0),
-            decafToday: Number(s.decafToday ?? 0),
-            teaToday: Number(s.teaToday ?? 0),
-            herbalToday: Number(s.herbalToday ?? 0),
-            peppermintToday: Number(s.peppermintToday ?? 0),
+            lunchDrink: s.lunchDrink ?? null,
+            dinnerDrink: s.dinnerDrink ?? null,
           };
         } catch { /* skip_* / hotdrink columns not migrated yet */ }
         return res.status(200).json({ ...rows[0], allocations, ...skips });
@@ -426,35 +415,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, meal, skip: on });
     }
 
-    // PATCH /api/visit/hotdrinks/:id — after-dinner hot-drinks order for today
-    // (self-only). { coffee, decaf, tea, herbal, peppermint } as non-negative
-    // counts. Stamps hotdrink_date to today so it auto-resets tomorrow; clears the
-    // date when every count is zero.
+    // PATCH /api/visit/hotdrinks/:id — pick ONE after-lunch or after-dinner hot
+    // drink for today (self-only). { meal: 'lunch'|'dinner', drink: <key>|null }.
+    // Stamps hotdrink_date to today; picking on a stale day clears the other
+    // sitting first, so both choices reset automatically each morning.
     if (seg0 === 'visit' && seg1 === 'hotdrinks' && seg2) {
       if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
       const userId = req.headers['x-user-id'] as string | undefined;
       if (!userId || userId !== seg2) return res.status(401).json({ error: 'Unauthorized' });
-      const clamp = (v: any) => Math.max(0, Math.min(20, Math.floor(Number(v) || 0)));
       const b = req.body ?? {};
-      const coffee = clamp(b.coffee);
-      const decaf = clamp(b.decaf);
-      const tea = clamp(b.tea);
-      const herbal = clamp(b.herbal);
-      const peppermint = clamp(b.peppermint);
-      const any = coffee + decaf + tea + herbal + peppermint > 0;
+      const meal = b.meal;
+      if (meal !== 'lunch' && meal !== 'dinner') return res.status(400).json({ error: 'Invalid meal' });
+      const drink = b.drink === null || b.drink === undefined ? null : String(b.drink);
+      if (drink !== null && !HOT_DRINK_KEYS.includes(drink)) return res.status(400).json({ error: 'Invalid drink' });
       const db = getDb();
       if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff have no drinks to order' });
       await db`
         UPDATE visits
-        SET coffee_count         = ${coffee},
-            decaf_count          = ${decaf},
-            tea_count            = ${tea},
-            herbal_tea_count     = ${herbal},
-            peppermint_tea_count = ${peppermint},
-            hotdrink_date = CASE WHEN ${any} THEN CURRENT_DATE ELSE NULL END
+        SET lunch_drink  = CASE WHEN ${meal} = 'lunch'  THEN ${drink}
+                                WHEN hotdrink_date = CURRENT_DATE THEN lunch_drink  ELSE NULL END,
+            dinner_drink = CASE WHEN ${meal} = 'dinner' THEN ${drink}
+                                WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END,
+            hotdrink_date = CURRENT_DATE
         WHERE user_id = ${seg2}
       `;
-      return res.status(200).json({ ok: true, coffee, decaf, tea, herbal, peppermint });
+      return res.status(200).json({ ok: true, meal, drink });
     }
 
     // GET /api/status/:id  — caller must present their own id; used by AuthContext on startup
@@ -1174,14 +1159,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS skip_lunch_date    DATE`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS skip_dinner_date   DATE`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS skip_aperitif_date DATE`;
-      // After-dinner hot drinks (today-scoped like the skips): counts apply only
-      // when hotdrink_date = CURRENT_DATE, so they reset automatically each day.
+      // After-lunch / after-dinner hot drinks (today-scoped like the skips): a
+      // single choice per sitting, applied only when hotdrink_date = CURRENT_DATE,
+      // so both reset automatically each day. (The older *_count columns are left
+      // in place, unused, from the earlier multi-count version.)
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS hotdrink_date DATE`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS coffee_count     INT NOT NULL DEFAULT 0`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS decaf_count      INT NOT NULL DEFAULT 0`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS tea_count        INT NOT NULL DEFAULT 0`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS herbal_tea_count INT NOT NULL DEFAULT 0`;
-      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS peppermint_tea_count INT NOT NULL DEFAULT 0`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS lunch_drink   TEXT`;
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dinner_drink  TEXT`;
       // Allow status-only rows (not coming / undecided) with no dates.
       await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;

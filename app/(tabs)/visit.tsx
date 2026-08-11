@@ -15,7 +15,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { allocationsForMember, roomLabel, type Allocation } from '../../constants/rooms';
-import { HOT_DRINKS, type HotDrinkField } from '../../constants/drinks';
+import { HOT_DRINKS } from '../../constants/drinks';
 import { avatarColor, initials } from '../../utils/ui';
 
 const VISIT_REFRESH_MS = 30000;
@@ -101,11 +101,8 @@ type VisitPlan = {
   skipLunchToday: boolean;    // today-scoped per-meal opt-outs
   skipDinnerToday: boolean;
   skipAperitifToday: boolean;
-  coffeeToday: number;        // after-dinner hot drinks ordered for tonight
-  decafToday: number;
-  teaToday: number;
-  herbalToday: number;
-  peppermintToday: number;
+  lunchDrink: string | null;   // today's single after-lunch / after-dinner hot drink
+  dinnerDrink: string | null;
 };
 
 function todayStr(): string {
@@ -136,7 +133,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, coffeeToday: 0, decafToday: 0, teaToday: 0, herbalToday: 0, peppermintToday: 0 };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, lunchDrink: null, dinnerDrink: null };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -384,11 +381,8 @@ export default function VisitScreen() {
           skipLunchToday:    !!d.skipLunchToday,
           skipDinnerToday:   !!d.skipDinnerToday,
           skipAperitifToday: !!d.skipAperitifToday,
-          coffeeToday:       Number(d.coffeeToday ?? 0),
-          decafToday:        Number(d.decafToday ?? 0),
-          teaToday:          Number(d.teaToday ?? 0),
-          herbalToday:       Number(d.herbalToday ?? 0),
-          peppermintToday:   Number(d.peppermintToday ?? 0),
+          lunchDrink:        d.lunchDrink ?? null,
+          dinnerDrink:       d.dinnerDrink ?? null,
         };
         setSaved(plan);
         setForm(plan);
@@ -422,24 +416,20 @@ export default function VisitScreen() {
     }
   }
 
-  // Adjust one of tonight's after-dinner hot drinks by ±1. Optimistic; persists
-  // the whole set (the API takes all counts at once).
-  async function adjustDrink(field: HotDrinkField, delta: number) {
+  // Pick (or clear, by re-tapping) the single hot drink for a sitting. Optimistic.
+  async function chooseDrink(meal: 'lunch' | 'dinner', key: string) {
     if (!user || !saved || savingDrinks) return;
-    const current = (saved[field] as number) ?? 0;
-    const next = Math.max(0, Math.min(20, current + delta));
-    if (next === current) return;
+    const field = meal === 'lunch' ? 'lunchDrink' : 'dinnerDrink';
+    const next = saved[field] === key ? null : key; // re-tap clears
     const prev = saved;
     const optimistic = { ...saved, [field]: next };
     setSavingDrinks(true);
     setSaved(optimistic);
     try {
-      const body: Record<string, number> = {};
-      for (const d of HOT_DRINKS) body[d.key] = (optimistic[d.field] as number) ?? 0;
       const res = await fetch(`/api/visit/hotdrinks/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ meal, drink: next }),
       });
       if (!res.ok) setSaved(prev); // revert on failure
     } catch {
@@ -811,37 +801,40 @@ export default function VisitScreen() {
               ))}
             </View>
 
-            {/* After-dinner hot drinks — tell staff how many of each you'd like tonight. */}
-            <Text style={[styles.skipHint, { marginTop: 14 }]}>
-              {isStaying ? 'After-dinner drinks — set how many you’d like tonight.' : 'After-dinner drinks are set while you’re here.'}
-            </Text>
-            {HOT_DRINKS.map(d => {
-              const count = (saved[d.field] as number) ?? 0;
+            {/* Hot drink — one choice for the current sitting. Before 3pm it's the
+                after-lunch drink; from 3pm on it's the after-dinner drink. */}
+            {(() => {
+              const meal: 'lunch' | 'dinner' = new Date().getHours() < 15 ? 'lunch' : 'dinner';
+              const chosen = meal === 'lunch' ? saved.lunchDrink : saved.dinnerDrink;
               return (
-                <View key={d.key} style={styles.drinkStepperRow}>
-                  <Text style={styles.drinkStepperLabel}>{d.label}</Text>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity
-                      style={[styles.stepBtn, (!isStaying || count <= 0) && styles.stepBtnDisabled]}
-                      onPress={() => adjustDrink(d.field, -1)}
-                      disabled={!isStaying || savingDrinks || count <= 0}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.stepBtnText}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.stepCount}>{count}</Text>
-                    <TouchableOpacity
-                      style={[styles.stepBtn, !isStaying && styles.stepBtnDisabled]}
-                      onPress={() => adjustDrink(d.field, +1)}
-                      disabled={!isStaying || savingDrinks}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.stepBtnText}>+</Text>
-                    </TouchableOpacity>
+                <>
+                  <Text style={[styles.summaryEyebrow, { marginTop: 18 }]}>
+                    {meal === 'lunch' ? 'AFTER-LUNCH DRINK' : 'AFTER-DINNER DRINK'}
+                  </Text>
+                  <Text style={styles.skipHint}>
+                    {isStaying ? 'Choose one — tap again to clear.' : 'Choose while you’re here at the château.'}
+                  </Text>
+                  <View style={styles.skipRow}>
+                    {HOT_DRINKS.map(d => {
+                      const on = chosen === d.key;
+                      return (
+                        <TouchableOpacity
+                          key={d.key}
+                          style={[styles.skipPill, on && styles.skipPillOn, !isStaying && styles.skipPillDisabled]}
+                          onPress={() => chooseDrink(meal, d.key)}
+                          disabled={!isStaying || savingDrinks}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={[styles.skipPillText, on && styles.skipPillTextOn, !isStaying && styles.skipPillTextDisabled]}>
+                            {on ? '✓ ' : ''}{d.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                </View>
+                </>
               );
-            })}
+            })()}
           </View>
 
           <View style={styles.summaryDivider} />

@@ -18,16 +18,19 @@ export const DRINK_LABELS: Record<string, string> = {
   skinny_bitch: 'Skinny Bitch',
 };
 
-// After-dinner hot drinks. `field` is the count property returned by the API
-// (and stored per-day on the visit); `label` is what's shown to people/staff.
-// Order here is the order shown on My Visit and in the Family tab summary.
+// After-lunch / after-dinner hot drinks. Each person picks ONE per sitting (or
+// none). `key` is stored on the visit (lunch_drink / dinner_drink); `label` is
+// shown to people and staff. Order here is the order shown everywhere.
 export const HOT_DRINKS = [
-  { key: 'coffee',     field: 'coffeeToday',     label: 'Coffee' },
-  { key: 'decaf',      field: 'decafToday',      label: 'Decaf coffee' },
-  { key: 'tea',        field: 'teaToday',        label: 'Tea' },
-  { key: 'herbal',     field: 'herbalToday',     label: 'Herbal tea' },
-  { key: 'peppermint', field: 'peppermintToday', label: 'Peppermint tea' },
+  { key: 'coffee',     label: 'Coffee' },
+  { key: 'decaf',      label: 'Decaf coffee' },
+  { key: 'tea',        label: 'Tea' },
+  { key: 'herbal',     label: 'Herbal tea' },
+  { key: 'peppermint', label: 'Peppermint tea' },
 ] as const;
 
 export type HotDrinkKey = typeof HOT_DRINKS[number]['key'];
-export type HotDrinkField = typeof HOT_DRINKS[number]['field'];
+
+export const HOT_DRINK_KEYS: string[] = HOT_DRINKS.map(d => d.key);
+export const HOT_DRINK_LABEL: Record<string, string> =
+  Object.fromEntries(HOT_DRINKS.map(d => [d.key, d.label]));

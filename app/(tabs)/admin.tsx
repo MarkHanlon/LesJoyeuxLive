@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import { DRINK_ICONS, DRINK_LABELS, HOT_DRINKS } from '../../constants/drinks';
+import { DRINK_ICONS, DRINK_LABELS, HOT_DRINKS, HOT_DRINK_LABEL } from '../../constants/drinks';
 import { ROOMS, roomLabel, allocationsForMember, segmentsOverlap, type Allocation } from '../../constants/rooms';
 import { addDays, datesBetween, daysUntil, endOfWeek, formatDate, formatDateLong, slotLabel, startOfWeek, todayStr } from '../../utils/date';
 import { avatarColor, initials } from '../../utils/ui';
@@ -222,11 +222,8 @@ type FamilyMember = {
   skipLunchToday?: boolean | null;
   skipDinnerToday?: boolean | null;
   skipAperitifToday?: boolean | null;
-  coffeeToday?: number | null;   // after-dinner hot drinks ordered for today
-  decafToday?: number | null;
-  teaToday?: number | null;
-  herbalToday?: number | null;
-  peppermintToday?: number | null;
+  lunchDrink?: string | null;    // today's single after-lunch / after-dinner hot drink
+  dinnerDrink?: string | null;
   hasPush?: boolean | null; // has ≥1 push subscription (admins only, for Manage mode)
   avatar?: string | null;
   pickupNeeded?: boolean | null;
@@ -880,27 +877,25 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
   }
   const rows = Object.entries(counts).sort(([, a], [, b]) => b - a);
 
-  // After-dinner hot drinks (today-scoped counts; anyone who has ordered shows here).
+  // After-lunch / after-dinner hot drinks — one choice per person per sitting.
   const firstNameOf = (n: string) => n.trim().split(/\s+/)[0];
-  const hotDrinkCount = (m: FamilyMember, field: string) => Number((m as any)[field] ?? 0);
-  const hotDrinkTotal = (m: FamilyMember) => HOT_DRINKS.reduce((n, d) => n + hotDrinkCount(m, d.field), 0);
-  const hotDrinkers = members
-    .filter(m => hotDrinkTotal(m) > 0)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  // Per-drink totals across everyone, kept in HOT_DRINKS order.
-  const drinkTotals = HOT_DRINKS.map(d => ({
-    label: d.label,
-    total: members.reduce((n, m) => n + hotDrinkCount(m, d.field), 0),
-  }));
-  const hotDrinkHeadline = drinkTotals
-    .filter(d => d.total > 0)
-    .map(d => `${d.total} ${d.total === 1 ? d.label.toLowerCase() : d.label.toLowerCase() + 's'}`)
-    .join(' · ');
-  // For each person: the drinks they ordered, as words (e.g. "Coffee ×2, Herbal tea ×1").
-  const personDrinks = (m: FamilyMember) => HOT_DRINKS
-    .filter(d => hotDrinkCount(m, d.field) > 0)
-    .map(d => `${d.label} ×${hotDrinkCount(m, d.field)}`)
-    .join(', ');
+  // Build a sitting's tally: per-drink totals headline + who chose what.
+  const hotDrinkSitting = (pick: (m: FamilyMember) => string | null | undefined) => {
+    const chosen = members
+      .map(m => ({ m, drink: pick(m) }))
+      .filter(x => !!x.drink) as { m: FamilyMember; drink: string }[];
+    const headline = HOT_DRINKS
+      .map(d => ({ label: d.label, total: chosen.filter(x => x.drink === d.key).length }))
+      .filter(d => d.total > 0)
+      .map(d => `${d.total} ${d.total === 1 ? d.label.toLowerCase() : d.label.toLowerCase() + 's'}`)
+      .join(' · ');
+    const people = chosen
+      .sort((a, b) => a.m.name.localeCompare(b.m.name))
+      .map(x => ({ id: x.m.id, name: firstNameOf(x.m.name), label: HOT_DRINK_LABEL[x.drink] ?? x.drink }));
+    return { headline, people };
+  };
+  const lunchDrinks  = hotDrinkSitting(m => m.lunchDrink);
+  const dinnerDrinks = hotDrinkSitting(m => m.dinnerDrink);
 
   return (
     <>
@@ -951,24 +946,29 @@ function TonightSummaryCard({ members }: { members: FamilyMember[] }) {
         )}
       </View>
 
-      <View style={[styles.summaryCard, { marginTop: 4 }]}>
-        <View style={styles.summaryCardTitleRow}>
-          <Text style={styles.summaryCardTitle}>After-dinner drinks</Text>
-        </View>
-        <Text style={styles.summaryCardSub}>
-          {hotDrinkHeadline || 'No hot drinks ordered yet'}
-        </Text>
-        {hotDrinkers.length > 0 && (
-          <View style={styles.summaryCardRows}>
-            {hotDrinkers.map(m => (
-              <View key={m.id} style={styles.hotDrinkPersonRow}>
-                <Text style={styles.hotDrinkName}>{firstNameOf(m.name)}</Text>
-                <Text style={styles.hotDrinkCounts}>{personDrinks(m)}</Text>
-              </View>
-            ))}
+      {([
+        { title: 'After-lunch drinks',  data: lunchDrinks },
+        { title: 'After-dinner drinks', data: dinnerDrinks },
+      ]).map(sitting => (
+        <View key={sitting.title} style={[styles.summaryCard, { marginTop: 4 }]}>
+          <View style={styles.summaryCardTitleRow}>
+            <Text style={styles.summaryCardTitle}>{sitting.title}</Text>
           </View>
-        )}
-      </View>
+          <Text style={styles.summaryCardSub}>
+            {sitting.data.headline || 'Nothing chosen yet'}
+          </Text>
+          {sitting.data.people.length > 0 && (
+            <View style={styles.summaryCardRows}>
+              {sitting.data.people.map(p => (
+                <View key={p.id} style={styles.hotDrinkPersonRow}>
+                  <Text style={styles.hotDrinkName}>{p.name}</Text>
+                  <Text style={styles.hotDrinkCounts}>{p.label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      ))}
 
       <DateRangePrintModal
         visible={printMode !== null}
