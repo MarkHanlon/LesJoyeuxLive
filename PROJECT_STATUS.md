@@ -50,6 +50,7 @@ Working agreements and decisions that aren't obvious from the code. A new sessio
 | _(pending)_ | (hot-drinks-5) | Hot drinks expanded to coffee/decaf/tea/herbal/peppermint (shared HOT_DRINKS list); summary breakdown now uses words, not icons. **Needs Run Migrations** (decaf_count/herbal_tea_count/peppermint_tea_count) | 🕐 Not yet tested |
 | _(pending)_ | (event-rsvp) | Event sign-up: push to all on event creation; Going / Can't-make-it buttons per event; going/declined counts + tap-to-see-who modal. New event_rsvps table (created inline, no migration needed) | 🕐 Not yet tested |
 | _(pending)_ | (hot-drinks-single) | Hot drinks reworked: single choice per sitting (no counts); separate after-lunch & after-dinner picks; My Visit shows the sitting by time (<15:00 lunch, else dinner); staff summary shows both sittings. **Needs Run Migrations** (lunch_drink/dinner_drink) | 🕐 Not yet tested |
+| _(pending)_ | (cheese-notes) | Personal "cheeses I love" note on My Visit (persistent, free text, ≤500 chars); shown read-only on the member detail card. **Needs Run Migrations** (cheese_notes) | 🕐 Not yet tested |
 
 _How to update: after testing against the live site, read the "Build: …" stamp at the bottom of the home screen and record it here with the commit hash, what was tested, and the outcome (✅ Pass / ⚠️ Partial / ❌ Fail)._
 

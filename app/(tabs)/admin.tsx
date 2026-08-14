@@ -224,6 +224,7 @@ type FamilyMember = {
   skipAperitifToday?: boolean | null;
   lunchDrink?: string | null;    // today's single after-lunch / after-dinner hot drink
   dinnerDrink?: string | null;
+  cheeseNotes?: string | null;   // persistent personal note of cheeses they enjoy
   hasPush?: boolean | null; // has ≥1 push subscription (admins only, for Manage mode)
   avatar?: string | null;
   pickupNeeded?: boolean | null;
@@ -1303,6 +1304,17 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
                   </View>
                 </>
               )}
+
+              {/* Cheeses they love */}
+              {member.cheeseNotes?.trim() ? (
+                <>
+                  <View style={styles.modalDivider} />
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalEyebrow}>🧀 LOVES</Text>
+                    <Text style={styles.modalNote}>{member.cheeseNotes.trim()}</Text>
+                  </View>
+                </>
+              ) : null}
             </>
           ) : (
             <View style={styles.modalSection}>

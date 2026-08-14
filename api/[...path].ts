@@ -206,11 +206,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                  (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
                  (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
                  (CASE WHEN hotdrink_date = CURRENT_DATE THEN lunch_drink  ELSE NULL END) AS "lunchDrink",
-                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink"
+                 (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink",
+                 cheese_notes AS "cheeseNotes"
           FROM visits
         `;
         skipByUser = new Map(skipRows.map((r: any) => [r.userId, r]));
-      } catch { /* skip_* / hotdrink columns not migrated yet */ }
+      } catch { /* skip_* / hotdrink / cheese columns not migrated yet */ }
       const withSkips = withAlloc.map((m: any) => {
         const s = skipByUser.get(m.id);
         return {
@@ -220,6 +221,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           skipAperitifToday: !!s?.skipAperitifToday,
           lunchDrink: s?.lunchDrink ?? null,
           dinnerDrink: s?.dinnerDrink ?? null,
+          cheeseNotes: s?.cheeseNotes ?? null,
         };
       });
       // Admins-only: mark who has push notifications enabled (≥1 subscription), so
@@ -286,14 +288,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           allocations = agg?.allocations ?? [];
         } catch { /* room_allocations not migrated yet */ }
         let skips: any = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false,
-                           lunchDrink: null, dinnerDrink: null };
+                           lunchDrink: null, dinnerDrink: null, cheeseNotes: null };
         try {
           const [s] = await db`
             SELECT (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
                    (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
                    (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
                    (CASE WHEN hotdrink_date = CURRENT_DATE THEN lunch_drink  ELSE NULL END) AS "lunchDrink",
-                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink"
+                   (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink",
+                   cheese_notes AS "cheeseNotes"
             FROM visits WHERE user_id = ${id} LIMIT 1
           `;
           if (s) skips = {
@@ -302,8 +305,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             skipAperitifToday: !!s.skipAperitifToday,
             lunchDrink: s.lunchDrink ?? null,
             dinnerDrink: s.dinnerDrink ?? null,
+            cheeseNotes: s.cheeseNotes ?? null,
           };
-        } catch { /* skip_* / hotdrink columns not migrated yet */ }
+        } catch { /* skip_* / hotdrink / cheese columns not migrated yet */ }
         return res.status(200).json({ ...rows[0], allocations, ...skips });
       }
       if (method === 'POST') {
@@ -440,6 +444,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE user_id = ${seg2}
       `;
       return res.status(200).json({ ok: true, meal, drink });
+    }
+
+    // PATCH /api/visit/cheese/:id — the caller's persistent note of cheeses they
+    // enjoy (self-only, staff-blocked). Not date-scoped — it's a lasting memory.
+    if (seg0 === 'visit' && seg1 === 'cheese' && seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const userId = req.headers['x-user-id'] as string | undefined;
+      if (!userId || userId !== seg2) return res.status(401).json({ error: 'Unauthorized' });
+      const raw = (req.body ?? {}).notes;
+      const notes = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 500) : null;
+      const db = getDb();
+      if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff have no visit to edit' });
+      await db`UPDATE visits SET cheese_notes = ${notes} WHERE user_id = ${seg2}`;
+      return res.status(200).json({ ok: true, cheeseNotes: notes });
     }
 
     // GET /api/status/:id  — caller must present their own id; used by AuthContext on startup
@@ -1166,6 +1184,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS hotdrink_date DATE`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS lunch_drink   TEXT`;
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dinner_drink  TEXT`;
+      // A persistent personal note of cheeses this person enjoys (not date-scoped).
+      await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS cheese_notes TEXT`;
       // Allow status-only rows (not coming / undecided) with no dates.
       await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -103,6 +103,7 @@ type VisitPlan = {
   skipAperitifToday: boolean;
   lunchDrink: string | null;   // today's single after-lunch / after-dinner hot drink
   dinnerDrink: string | null;
+  cheeseNotes: string | null;  // persistent personal note of cheeses they enjoy
 };
 
 function todayStr(): string {
@@ -133,7 +134,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, lunchDrink: null, dinnerDrink: null };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, lunchDrink: null, dinnerDrink: null, cheeseNotes: null };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -310,6 +311,42 @@ function AperitifPickerModal({ open, current, busy, onPick, onClose }: {
   );
 }
 
+// A persistent free-text note of the cheeses this person enjoys. Seeds its draft
+// from `value` and re-syncs if `value` changes externally (e.g. background refresh),
+// which never clobbers typing since `value` only changes after a save.
+function CheeseNote({ value, saving, onSave }: { value: string; saving: boolean; onSave: (t: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  const dirty = draft.trim() !== value.trim();
+  return (
+    <>
+      <Text style={[styles.summaryEyebrow, { marginTop: 18 }]}>🧀 CHEESES I LOVE</Text>
+      <Text style={styles.skipHint}>Jot down the cheeses you enjoy so you remember your favourites next time.</Text>
+      <TextInput
+        style={styles.cheeseInput}
+        placeholder="e.g. Comté, Roquefort, the soft one from Tuesday…"
+        placeholderTextColor="#B8956A"
+        value={draft}
+        onChangeText={setDraft}
+        multiline
+        maxLength={500}
+      />
+      {dirty && (
+        <TouchableOpacity
+          style={[styles.cheeseSaveBtn, saving && { opacity: 0.6 }]}
+          onPress={() => onSave(draft)}
+          disabled={saving}
+          activeOpacity={0.8}
+        >
+          {saving
+            ? <ActivityIndicator color="#F5EDD6" size="small" />
+            : <Text style={styles.cheeseSaveBtnText}>Save cheeses</Text>}
+        </TouchableOpacity>
+      )}
+    </>
+  );
+}
+
 // ── Main screen ─────────────────────────────────────────────────────────────
 
 export default function VisitScreen() {
@@ -325,6 +362,7 @@ export default function VisitScreen() {
   const [drinkPickerOpen, setDrinkPickerOpen] = useState(false);
   const [skippingMeal, setSkippingMeal] = useState<null | 'lunch' | 'dinner' | 'aperitif'>(null);
   const [savingDrinks, setSavingDrinks] = useState(false);
+  const [savingCheese, setSavingCheese] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -383,6 +421,7 @@ export default function VisitScreen() {
           skipAperitifToday: !!d.skipAperitifToday,
           lunchDrink:        d.lunchDrink ?? null,
           dinnerDrink:       d.dinnerDrink ?? null,
+          cheeseNotes:       d.cheeseNotes ?? null,
         };
         setSaved(plan);
         setForm(plan);
@@ -393,7 +432,24 @@ export default function VisitScreen() {
   }, [user]);
 
   // Pause auto-refresh while the user is mid-edit so a poll can't wipe unsaved input.
-  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal && !savingDrinks);
+  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal && !savingDrinks && !savingCheese);
+
+  // Save the persistent cheese note. Updates `saved` on success so the field settles.
+  async function saveCheese(notes: string) {
+    if (!user || savingCheese) return;
+    const clean = notes.trim().slice(0, 500);
+    setSavingCheese(true);
+    try {
+      const res = await fetch(`/api/visit/cheese/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ notes: clean || null }),
+      });
+      if (res.ok) setSaved(prev => (prev ? { ...prev, cheeseNotes: clean || null } : prev));
+    } finally {
+      setSavingCheese(false);
+    }
+  }
 
   // Toggle a today-scoped opt-out ("no lunch/dinner/aperitif today"). Optimistic.
   async function toggleSkip(meal: 'lunch' | 'dinner' | 'aperitif') {
@@ -839,6 +895,11 @@ export default function VisitScreen() {
 
           <View style={styles.summaryDivider} />
           <View style={styles.summaryBlock}>
+            <CheeseNote value={saved.cheeseNotes ?? ''} saving={savingCheese} onSave={saveCheese} />
+          </View>
+
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryBlock}>
             <Text style={styles.summaryEyebrow}>Leaving</Text>
             <Text style={styles.summaryDate}>{formatDate(saved.departDate)}</Text>
             <Text style={styles.summarySlot}>{slotLabel(saved.departSlot)}</Text>
@@ -1240,6 +1301,16 @@ const styles = StyleSheet.create({
     fontSize: 17, fontWeight: '700', color: '#1A1209', minWidth: 22, textAlign: 'center',
     fontFamily: 'Raleway, system-ui, sans-serif',
   },
+  cheeseInput: {
+    borderWidth: 1.5, borderColor: '#EDD9A3', borderRadius: 12, backgroundColor: '#FFFDF5',
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#1A1209', minHeight: 64,
+    textAlignVertical: 'top', fontFamily: 'Raleway, system-ui, sans-serif',
+  },
+  cheeseSaveBtn: {
+    marginTop: 10, alignSelf: 'flex-start', backgroundColor: '#C85A2E',
+    borderRadius: 50, paddingVertical: 9, paddingHorizontal: 22,
+  },
+  cheeseSaveBtnText: { fontSize: 14, fontWeight: '700', color: '#F5EDD6', fontFamily: 'Raleway, system-ui, sans-serif' },
   summaryDate: {
     fontSize: 22,
     fontFamily: 'Playfair Display, Georgia, serif',
