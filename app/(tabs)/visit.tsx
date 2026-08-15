@@ -98,9 +98,9 @@ type VisitPlan = {
   dropoffTo: string;
   room: string | null;   // legacy single room (read-only here)
   allocations: Allocation[]; // date-ranged room segments (read-only here)
-  skipLunchToday: boolean;    // today-scoped per-meal opt-outs
-  skipDinnerToday: boolean;
-  skipAperitifToday: boolean;
+  lunchAbsences: string[];    // ISO dates away for lunch (today + planned ahead)
+  dinnerAbsences: string[];   // ISO dates away for dinner
+  skipAperitifToday: boolean; // aperitif stays today-scoped
   lunchDrink: string | null;   // today's single after-lunch / after-dinner hot drink
   dinnerDrink: string | null;
   cheeseNotes: string | null;  // persistent personal note of cheeses they enjoy
@@ -134,7 +134,7 @@ function slotLabel(slot: TimeSlot): string {
 
 function defaultPlan(): VisitPlan {
   const t = todayStr();
-  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false, lunchDrink: null, dinnerDrink: null, cheeseNotes: null };
+  return { status: 'coming', arriveDate: t, arriveSlot: 'afternoon', saveLunch: false, saveDinner: false, departDate: addDays(t, 7), departSlot: 'morning', aperitif: null, tonightAperitif: null, pickupNeeded: false, pickupTime: '', pickupFrom: '', dropoffNeeded: false, dropoffTime: '', dropoffTo: '', room: null, allocations: [], lunchAbsences: [], dinnerAbsences: [], skipAperitifToday: false, lunchDrink: null, dinnerDrink: null, cheeseNotes: null };
 }
 
 // ── Date navigator ──────────────────────────────────────────────────────────
@@ -361,6 +361,9 @@ export default function VisitScreen() {
   const [isSavingDrink, setIsSavingDrink] = useState(false);
   const [drinkPickerOpen, setDrinkPickerOpen] = useState(false);
   const [skippingMeal, setSkippingMeal] = useState<null | 'lunch' | 'dinner' | 'aperitif'>(null);
+  const [absenceBusy, setAbsenceBusy] = useState(false);
+  const [absMeal, setAbsMeal] = useState<'lunch' | 'dinner'>('lunch');
+  const [absDate, setAbsDate] = useState('');
   const [savingDrinks, setSavingDrinks] = useState(false);
   const [savingCheese, setSavingCheese] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
@@ -416,8 +419,8 @@ export default function VisitScreen() {
           dropoffTo:       d.dropoff_to ?? '',
           room:            d.room ?? null,
           allocations:     (d.allocations as Allocation[]) ?? [],
-          skipLunchToday:    !!d.skipLunchToday,
-          skipDinnerToday:   !!d.skipDinnerToday,
+          lunchAbsences:     Array.isArray(d.lunchAbsences) ? d.lunchAbsences.map((s: string) => String(s).slice(0, 10)) : [],
+          dinnerAbsences:    Array.isArray(d.dinnerAbsences) ? d.dinnerAbsences.map((s: string) => String(s).slice(0, 10)) : [],
           skipAperitifToday: !!d.skipAperitifToday,
           lunchDrink:        d.lunchDrink ?? null,
           dinnerDrink:       d.dinnerDrink ?? null,
@@ -432,7 +435,7 @@ export default function VisitScreen() {
   }, [user]);
 
   // Pause auto-refresh while the user is mid-edit so a poll can't wipe unsaved input.
-  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal && !savingDrinks && !savingCheese);
+  useAutoRefresh(fetchVisit, VISIT_REFRESH_MS, !isEditing && !isChangingDrink && !isSaving && !skippingMeal && !savingDrinks && !savingCheese && !absenceBusy);
 
   // Save the persistent cheese note. Updates `saved` on success so the field settles.
   async function saveCheese(notes: string) {
@@ -451,24 +454,48 @@ export default function VisitScreen() {
     }
   }
 
-  // Toggle a today-scoped opt-out ("no lunch/dinner/aperitif today"). Optimistic.
-  async function toggleSkip(meal: 'lunch' | 'dinner' | 'aperitif') {
+  // Toggle tonight's apéritif opt-out (still today-scoped). Optimistic.
+  async function toggleSkip(meal: 'aperitif') {
     if (!user || !saved || skippingMeal) return;
-    const key = meal === 'lunch' ? 'skipLunchToday' : meal === 'dinner' ? 'skipDinnerToday' : 'skipAperitifToday';
-    const next = !saved[key];
+    const next = !saved.skipAperitifToday;
     setSkippingMeal(meal);
-    setSaved(prev => (prev ? { ...prev, [key]: next } : prev)); // optimistic
+    setSaved(prev => (prev ? { ...prev, skipAperitifToday: next } : prev)); // optimistic
     try {
       const res = await fetch(`/api/visit/skip/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
         body: JSON.stringify({ meal, skip: next }),
       });
-      if (!res.ok) setSaved(prev => (prev ? { ...prev, [key]: !next } : prev)); // revert on failure
+      if (!res.ok) setSaved(prev => (prev ? { ...prev, skipAperitifToday: !next } : prev)); // revert on failure
     } catch {
-      setSaved(prev => (prev ? { ...prev, [key]: !next } : prev));
+      setSaved(prev => (prev ? { ...prev, skipAperitifToday: !next } : prev));
     } finally {
       setSkippingMeal(null);
+    }
+  }
+
+  // Mark (or clear) a lunch/dinner absence for a specific date. Optimistic. Used
+  // by both the "today" quick toggles and the plan-ahead calendar list.
+  async function setAbsence(meal: 'lunch' | 'dinner', date: string, absent: boolean) {
+    if (!user || !saved || absenceBusy) return;
+    const key = meal === 'lunch' ? 'lunchAbsences' : 'dinnerAbsences';
+    const has = saved[key].includes(date);
+    if (has === absent) return; // no change
+    const nextArr = absent ? [...saved[key], date].sort() : saved[key].filter(d => d !== date);
+    const prev = saved;
+    setAbsenceBusy(true);
+    setSaved({ ...saved, [key]: nextArr });
+    try {
+      const res = await fetch(`/api/visit/absence/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': user.id },
+        body: JSON.stringify({ meal, date, absent }),
+      });
+      if (!res.ok) setSaved(prev);
+    } catch {
+      setSaved(prev);
+    } finally {
+      setAbsenceBusy(false);
     }
   }
 
@@ -838,23 +865,28 @@ export default function VisitScreen() {
               {isStaying ? 'Tap to skip a sitting today — resets tomorrow.' : 'Available while you’re here at the château.'}
             </Text>
             <View style={styles.skipRow}>
-              {([
-                { meal: 'lunch' as const,    label: 'No lunch today',     on: saved.skipLunchToday },
-                { meal: 'dinner' as const,   label: 'No dinner tonight',  on: saved.skipDinnerToday },
-                { meal: 'aperitif' as const, label: 'No apéritif tonight', on: saved.skipAperitifToday },
-              ]).map(b => (
-                <TouchableOpacity
-                  key={b.meal}
-                  style={[styles.skipPill, b.on && styles.skipPillOn, !isStaying && styles.skipPillDisabled]}
-                  onPress={() => toggleSkip(b.meal)}
-                  disabled={!isStaying || !!skippingMeal}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.skipPillText, b.on && styles.skipPillTextOn, !isStaying && styles.skipPillTextDisabled]}>
-                    {b.on ? '✓ ' : ''}{b.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {(() => {
+                const today = todayStr();
+                return ([
+                  { meal: 'lunch' as const,    label: 'No lunch today',      on: saved.lunchAbsences.includes(today),  kind: 'absence' as const },
+                  { meal: 'dinner' as const,   label: 'No dinner tonight',   on: saved.dinnerAbsences.includes(today), kind: 'absence' as const },
+                  { meal: 'aperitif' as const, label: 'No apéritif tonight', on: saved.skipAperitifToday,               kind: 'skip' as const },
+                ]).map(b => (
+                  <TouchableOpacity
+                    key={b.meal}
+                    style={[styles.skipPill, b.on && styles.skipPillOn, !isStaying && styles.skipPillDisabled]}
+                    onPress={() => b.kind === 'skip'
+                      ? toggleSkip('aperitif')
+                      : setAbsence(b.meal as 'lunch' | 'dinner', today, !b.on)}
+                    disabled={!isStaying || !!skippingMeal || absenceBusy}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.skipPillText, b.on && styles.skipPillTextOn, !isStaying && styles.skipPillTextDisabled]}>
+                      {b.on ? '✓ ' : ''}{b.label}
+                    </Text>
+                  </TouchableOpacity>
+                ));
+              })()}
             </View>
 
             {/* Hot drink — one choice for the current sitting. Before 3pm it's the
@@ -889,6 +921,70 @@ export default function VisitScreen() {
                     })}
                   </View>
                 </>
+              );
+            })()}
+          </View>
+
+          {/* Plan ahead — mark future dates you won't be here for lunch or dinner */}
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryBlock}>
+            <Text style={styles.summaryEyebrow}>AWAY FOR A MEAL</Text>
+            <Text style={styles.skipHint}>Planning ahead? Add a future day you won’t be here for lunch or dinner.</Text>
+
+            <View style={styles.absMealRow}>
+              {(['lunch', 'dinner'] as const).map(m => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.absMealPill, absMeal === m && styles.absMealPillOn]}
+                  onPress={() => setAbsMeal(m)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.absMealPillText, absMeal === m && styles.absMealPillTextOn]}>
+                    {m === 'lunch' ? 'Lunch' : 'Dinner'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.absAddRow}>
+              <View style={{ flex: 1 }}>
+                <DateRow value={absDate || addDays(todayStr(), 1)} onChange={setAbsDate} minDate={addDays(todayStr(), 1)} />
+              </View>
+              <TouchableOpacity
+                style={[styles.absAddBtn, absenceBusy && { opacity: 0.6 }]}
+                onPress={() => setAbsence(absMeal, absDate || addDays(todayStr(), 1), true)}
+                disabled={absenceBusy}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.absAddBtnText}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {(() => {
+              const today = todayStr();
+              const upcoming = [
+                ...saved.lunchAbsences.filter(d => d > today).map(d => ({ d, meal: 'lunch' as const })),
+                ...saved.dinnerAbsences.filter(d => d > today).map(d => ({ d, meal: 'dinner' as const })),
+              ].sort((a, b) => a.d.localeCompare(b.d) || a.meal.localeCompare(b.meal));
+              if (upcoming.length === 0) {
+                return <Text style={styles.absEmpty}>No upcoming absences.</Text>;
+              }
+              return (
+                <View style={styles.absList}>
+                  {upcoming.map(({ d, meal }) => (
+                    <View key={`${meal}-${d}`} style={styles.absItem}>
+                      <Text style={styles.absItemText}>
+                        {meal === 'lunch' ? '🥗' : '🍽'}  Away for {meal} — {formatDate(d)}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setAbsence(meal, d, false)}
+                        disabled={absenceBusy}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.absItemCancel}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
               );
             })()}
           </View>
@@ -1311,6 +1407,26 @@ const styles = StyleSheet.create({
     borderRadius: 50, paddingVertical: 9, paddingHorizontal: 22,
   },
   cheeseSaveBtnText: { fontSize: 14, fontWeight: '700', color: '#F5EDD6', fontFamily: 'Raleway, system-ui, sans-serif' },
+  absMealRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  absMealPill: {
+    paddingVertical: 7, paddingHorizontal: 18, borderRadius: 50,
+    borderWidth: 1.5, borderColor: '#C8973D', backgroundColor: '#FFFDF5',
+  },
+  absMealPillOn: { backgroundColor: '#8B6245', borderColor: '#8B6245' },
+  absMealPillText: { fontSize: 13, fontWeight: '700', color: '#C8973D', fontFamily: 'Raleway, system-ui, sans-serif' },
+  absMealPillTextOn: { color: '#F5EDD6' },
+  absAddRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  absAddBtn: { backgroundColor: '#C85A2E', borderRadius: 50, paddingVertical: 10, paddingHorizontal: 18 },
+  absAddBtnText: { fontSize: 14, fontWeight: '700', color: '#F5EDD6', fontFamily: 'Raleway, system-ui, sans-serif' },
+  absEmpty: { fontSize: 13, color: '#B8956A', fontStyle: 'italic', marginTop: 12, fontFamily: 'Raleway, system-ui, sans-serif' },
+  absList: { marginTop: 12, gap: 8 },
+  absItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFFDF5', borderWidth: 1, borderColor: '#EDD9A3', borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+  },
+  absItemText: { fontSize: 14, color: '#1A1209', fontFamily: 'Raleway, system-ui, sans-serif' },
+  absItemCancel: { fontSize: 15, fontWeight: '700', color: '#C85A2E', paddingHorizontal: 4 },
   summaryDate: {
     fontSize: 22,
     fontFamily: 'Playfair Display, Georgia, serif',

@@ -219,8 +219,8 @@ type FamilyMember = {
   aperitif: string | null;
   saveLunch?: boolean | null;
   saveDinner?: boolean | null;
-  skipLunchToday?: boolean | null;
-  skipDinnerToday?: boolean | null;
+  lunchAbsences?: string[] | null;   // ISO dates this person is away for lunch
+  dinnerAbsences?: string[] | null;  // ISO dates this person is away for dinner
   skipAperitifToday?: boolean | null;
   lunchDrink?: string | null;    // today's single after-lunch / after-dinner hot drink
   dinnerDrink?: string | null;
@@ -284,7 +284,7 @@ const BEFORE_DINNER_SLOTS = new Set(['morning', 'lunchtime', 'afternoon']);
 
 function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
   if (!member.arriveDate || !member.departDate) return 'no';
-  if (date === todayStr() && member.skipDinnerToday) return 'no'; // opted out of dinner today
+  if (member.dinnerAbsences?.includes(date)) return 'no'; // marked away for dinner this date
   const arrive = String(member.arriveDate).slice(0, 10);
   const depart = String(member.departDate).slice(0, 10);
   if (date < arrive || date > depart) return 'no';
@@ -298,7 +298,7 @@ function getDinnerStatus(member: FamilyMember, date: string): 'yes' | 'keep' | '
 
 function getLunchStatus(member: FamilyMember, date: string): 'yes' | 'keep' | 'no' {
   if (!member.arriveDate || !member.departDate) return 'no';
-  if (date === todayStr() && member.skipLunchToday) return 'no'; // opted out of lunch today
+  if (member.lunchAbsences?.includes(date)) return 'no'; // marked away for lunch this date
   const arrive = String(member.arriveDate).slice(0, 10);
   const depart = String(member.departDate).slice(0, 10);
   if (date < arrive || date > depart) return 'no';
@@ -1250,8 +1250,17 @@ function MemberDetailModal({ member, onClose }: { member: FamilyMember | null; o
                 {isHere && <Text style={styles.modalHereNow}>● Here now</Text>}
                 {member.saveLunch  && <Text style={styles.modalNote}>🍽  Lunch plate saved</Text>}
                 {member.saveDinner && <Text style={styles.modalNote}>🍽  Dinner plate saved</Text>}
-                {isHere && member.skipLunchToday && <Text style={styles.modalNote}>🚫  Skipping lunch today</Text>}
-                {isHere && member.skipDinnerToday && <Text style={styles.modalNote}>🚫  Skipping dinner tonight</Text>}
+                {isHere && member.lunchAbsences?.includes(today) && <Text style={styles.modalNote}>🚫  Away for lunch today</Text>}
+                {isHere && member.dinnerAbsences?.includes(today) && <Text style={styles.modalNote}>🚫  Away for dinner tonight</Text>}
+                {(() => {
+                  const upcoming = [
+                    ...(member.lunchAbsences ?? []).filter(d => d > today).map(d => ({ d, meal: 'lunch' })),
+                    ...(member.dinnerAbsences ?? []).filter(d => d > today).map(d => ({ d, meal: 'dinner' })),
+                  ].sort((a, b) => a.d.localeCompare(b.d));
+                  return upcoming.map(({ d, meal }) => (
+                    <Text key={`${meal}-${d}`} style={styles.modalNote}>📅  Away for {meal} — {formatDate(d)}</Text>
+                  ));
+                })()}
                 {isHere && member.skipAperitifToday && <Text style={styles.modalNote}>🚫  No apéritif tonight</Text>}
                 {member.pickupNeeded && (
                   <Text style={styles.modalTransport}>

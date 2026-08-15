@@ -212,13 +212,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `;
         skipByUser = new Map(skipRows.map((r: any) => [r.userId, r]));
       } catch { /* skip_* / hotdrink / cheese columns not migrated yet */ }
+      // Planned lunch/dinner absences per member (arrays of ISO dates). Guarded so
+      // a pre-migration DB (table absent) still works — everyone just gets [].
+      let absByUser = new Map<string, { lunch: string[]; dinner: string[] }>();
+      try {
+        const absRows = await db`
+          SELECT user_id AS "userId",
+                 array_agg(absence_date::text) FILTER (WHERE meal = 'lunch')  AS lunch,
+                 array_agg(absence_date::text) FILTER (WHERE meal = 'dinner') AS dinner
+          FROM meal_absences
+          GROUP BY user_id
+        `;
+        absByUser = new Map(absRows.map((r: any) => [r.userId, { lunch: r.lunch ?? [], dinner: r.dinner ?? [] }]));
+      } catch { /* meal_absences not migrated yet */ }
       const withSkips = withAlloc.map((m: any) => {
         const s = skipByUser.get(m.id);
+        const a = absByUser.get(m.id);
         return {
           ...m,
-          skipLunchToday: !!s?.skipLunchToday,
-          skipDinnerToday: !!s?.skipDinnerToday,
           skipAperitifToday: !!s?.skipAperitifToday,
+          lunchAbsences: a?.lunch ?? [],
+          dinnerAbsences: a?.dinner ?? [],
           lunchDrink: s?.lunchDrink ?? null,
           dinnerDrink: s?.dinnerDrink ?? null,
           cheeseNotes: s?.cheeseNotes ?? null,
@@ -287,27 +301,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           `;
           allocations = agg?.allocations ?? [];
         } catch { /* room_allocations not migrated yet */ }
-        let skips: any = { skipLunchToday: false, skipDinnerToday: false, skipAperitifToday: false,
-                           lunchDrink: null, dinnerDrink: null, cheeseNotes: null };
+        let skips: any = { skipAperitifToday: false, lunchDrink: null, dinnerDrink: null, cheeseNotes: null };
         try {
           const [s] = await db`
-            SELECT (skip_lunch_date    = CURRENT_DATE) AS "skipLunchToday",
-                   (skip_dinner_date   = CURRENT_DATE) AS "skipDinnerToday",
-                   (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
+            SELECT (skip_aperitif_date = CURRENT_DATE) AS "skipAperitifToday",
                    (CASE WHEN hotdrink_date = CURRENT_DATE THEN lunch_drink  ELSE NULL END) AS "lunchDrink",
                    (CASE WHEN hotdrink_date = CURRENT_DATE THEN dinner_drink ELSE NULL END) AS "dinnerDrink",
                    cheese_notes AS "cheeseNotes"
             FROM visits WHERE user_id = ${id} LIMIT 1
           `;
           if (s) skips = {
-            skipLunchToday: !!s.skipLunchToday,
-            skipDinnerToday: !!s.skipDinnerToday,
             skipAperitifToday: !!s.skipAperitifToday,
             lunchDrink: s.lunchDrink ?? null,
             dinnerDrink: s.dinnerDrink ?? null,
             cheeseNotes: s.cheeseNotes ?? null,
           };
         } catch { /* skip_* / hotdrink / cheese columns not migrated yet */ }
+        let mealAbsences = { lunchAbsences: [] as string[], dinnerAbsences: [] as string[] };
+        try {
+          const absRows = await db`
+            SELECT meal, absence_date::text AS "date" FROM meal_absences WHERE user_id = ${id}
+          `;
+          mealAbsences = {
+            lunchAbsences:  absRows.filter((r: any) => r.meal === 'lunch').map((r: any) => r.date),
+            dinnerAbsences: absRows.filter((r: any) => r.meal === 'dinner').map((r: any) => r.date),
+          };
+        } catch { /* meal_absences not migrated yet */ }
+        skips = { ...skips, ...mealAbsences };
         return res.status(200).json({ ...rows[0], allocations, ...skips });
       }
       if (method === 'POST') {
@@ -417,6 +437,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await db`UPDATE visits SET skip_aperitif_date = CASE WHEN ${on} THEN CURRENT_DATE ELSE NULL END WHERE user_id = ${seg2}`;
       }
       return res.status(200).json({ ok: true, meal, skip: on });
+    }
+
+    // PATCH /api/visit/absence/:id — mark (or clear) a planned lunch/dinner absence
+    // on a specific date (self-only, staff-blocked). { meal, date, absent }.
+    if (seg0 === 'visit' && seg1 === 'absence' && seg2) {
+      if (method !== 'PATCH') return res.status(405).json({ error: 'Method not allowed' });
+      const userId = req.headers['x-user-id'] as string | undefined;
+      if (!userId || userId !== seg2) return res.status(401).json({ error: 'Unauthorized' });
+      const { meal, date, absent } = req.body ?? {};
+      if (meal !== 'lunch' && meal !== 'dinner') return res.status(400).json({ error: 'Invalid meal' });
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Invalid date' });
+      const db = getDb();
+      if (await callerIsStaff(db, userId)) return res.status(403).json({ error: 'Staff have no meals to skip' });
+      await db`
+        CREATE TABLE IF NOT EXISTS meal_absences (
+          user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          meal         TEXT NOT NULL,
+          absence_date DATE NOT NULL,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, meal, absence_date)
+        )
+      `;
+      if (absent) {
+        await db`
+          INSERT INTO meal_absences (user_id, meal, absence_date)
+          VALUES (${seg2}, ${meal}, ${date}::date)
+          ON CONFLICT (user_id, meal, absence_date) DO NOTHING
+        `;
+      } else {
+        await db`DELETE FROM meal_absences WHERE user_id = ${seg2} AND meal = ${meal} AND absence_date = ${date}::date`;
+      }
+      return res.status(200).json({ ok: true, meal, date, absent: !!absent });
     }
 
     // PATCH /api/visit/hotdrinks/:id — pick ONE after-lunch or after-dinner hot
@@ -1186,6 +1238,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS dinner_drink  TEXT`;
       // A persistent personal note of cheeses this person enjoys (not date-scoped).
       await db`ALTER TABLE visits ADD COLUMN IF NOT EXISTS cheese_notes TEXT`;
+      // Planned meal absences: one row per (person, meal, date) they won't attend.
+      // Replaces the today-only skip_lunch_date / skip_dinner_date for lunch/dinner.
+      await db`
+        CREATE TABLE IF NOT EXISTS meal_absences (
+          user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          meal         TEXT NOT NULL,
+          absence_date DATE NOT NULL,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, meal, absence_date)
+        )
+      `;
       // Allow status-only rows (not coming / undecided) with no dates.
       await db`ALTER TABLE visits ALTER COLUMN arrive_date DROP NOT NULL`;
       await db`ALTER TABLE visits ALTER COLUMN depart_date DROP NOT NULL`;
